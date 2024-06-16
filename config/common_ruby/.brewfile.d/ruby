@@ -1,4 +1,4 @@
 rbenv
 vips
 overmind
-libpq
+postgresql@14
