@@ -17,3 +17,7 @@ vim.g.clipboard = {
   },
   cache_enabled = 0,
 }
+
+local opt = vim.opt
+opt.foldmethod = "expr"
+opt.foldexpr = "nvim_treesitter#foldexpr()"
