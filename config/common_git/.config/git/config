@@ -2,7 +2,9 @@
   path = user
 [alias]
 	co = checkout
-	st = status
+  st = status
+  pushf = push --force-with-lease
+  pullm = pull origin main
 [core]
 	autocrlf = input
 [init]
@@ -13,3 +15,18 @@
 [credential "https://gist.github.com"]
 	helper = 
 	helper = !/home/linuxbrew/.linuxbrew/bin/gh auth git-credential
+[branch]
+  autosetuprebase = always
+[diff]
+  colorMoved = zebra
+[fetch]
+  prune = true
+[help]
+	autocorrect = 5
+[init]
+  defaultBranch = main
+[pull]
+	rebase = true
+[rebase]
+  autosquash = true
+  autoStash = true

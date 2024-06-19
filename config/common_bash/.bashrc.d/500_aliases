@@ -9,3 +9,4 @@ alias vim="nvim"
 alias ff="fzf --bind 'enter:become(nvim {})'"
 alias ..="cd .."
 alias op="op.exe"
+
