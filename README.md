@@ -11,3 +11,9 @@ Help:
   make bootstrap           bootstrap the environment
   make update              update the sources
 ```
+
+<leader>sk - all keymaps
+<leader>sr - search and replace
+https://kb.iany.me/para/lets/v/Vim/LazyVim+Shortcuts+Cheatsheet
+https://www.lazyvim.org/keymaps
+
