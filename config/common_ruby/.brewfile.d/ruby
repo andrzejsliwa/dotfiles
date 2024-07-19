@@ -1,4 +1,5 @@
 rbenv
 vips
 overmind
-libpg
+libpq
+

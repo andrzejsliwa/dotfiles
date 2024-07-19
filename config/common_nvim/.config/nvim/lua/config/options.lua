@@ -21,3 +21,8 @@ vim.g.clipboard = {
 local opt = vim.opt
 opt.foldmethod = "expr"
 opt.foldexpr = "nvim_treesitter#foldexpr()"
+
+vim.keymap.set('n', '<space>rs', '<cmd>IronRepl<cr>')
+vim.keymap.set('n', '<space>rr', '<cmd>IronRestart<cr>')
+vim.keymap.set('n', '<space>rf', '<cmd>IronFocus<cr>')
+vim.keymap.set('n', '<space>rh', '<cmd>IronHide<cr>')

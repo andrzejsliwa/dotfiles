@@ -1,0 +1,3 @@
+eval "$(pyenv init -)"
+eval "$(_PIPENV_COMPLETE=bash_source pipenv)"
+
