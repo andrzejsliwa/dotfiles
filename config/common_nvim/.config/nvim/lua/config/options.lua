@@ -32,3 +32,4 @@ vim.keymap.set("n", "<Leader>pe", "<Cmd>!pipenv run python %<CR>", { buffer = tr
 vim.keymap.set("n", "<Leader>pi", function()
   vim.cmd(string.format([[TermExec cmd="python %s"]], vim.fn.expand("%:~:.")))
 end, { buffer = true, desc = "[ToggleTerm] python %" })
+
