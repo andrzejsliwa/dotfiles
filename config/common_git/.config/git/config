@@ -6,7 +6,8 @@
   pushf = push --force-with-lease
   pullm = pull origin main
 [core]
-	autocrlf = input
+  autocrlf = input
+  pager = delta
 [init]
 	defaultBranch = main
 [credential "https://github.com"]
@@ -30,3 +31,11 @@
 [rebase]
   autosquash = true
   autoStash = true
+[interactive]
+  diffFilter = delta --color-only
+[delta]
+  navigate = true
+  side-by-side = true
+[merge]
+  conflictstyle = diff3
+
