@@ -124,4 +124,5 @@ fi
 
 export LANG=en_US.UTF-8
 export LC_CTYPE=en_US.UTF-8
+alias tilt=$(brew --prefix tilt)/bin/tilt
 # sudo dpkg-reconfigure locales
