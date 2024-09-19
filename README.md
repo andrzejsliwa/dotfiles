@@ -1,4 +1,4 @@
-# Sevos' dotfiles
+# Andrzej Śliwa dotfiles
 
 ## Installation
 
