@@ -124,5 +124,7 @@ fi
 
 export LANG=en_US.UTF-8
 export LC_CTYPE=en_US.UTF-8
+export BROWSER='/mnt/c/Program\ Files/Google/Chrome/Application/chrome.exe --profile-directory="Profile 2"' # wsl
 alias tilt=$(brew --prefix tilt)/bin/tilt
+eval "$(direnv hook bash)"
 # sudo dpkg-reconfigure locales
