@@ -16,4 +16,5 @@ if [[ $(ulimit -Sn) -lt 20000 ]]; then
 fi
 
 # concatenate all files from ../.brewfile.d/* and pass to xargs brew installed
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 cat $(dirname "$0")/../.brewfile.d/* | xargs brew install -q
