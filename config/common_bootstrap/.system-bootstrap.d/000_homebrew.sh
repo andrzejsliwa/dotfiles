@@ -4,6 +4,8 @@ if ! [ -x "$(command -v brew)" ]; then
 	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
 if [ ! -f /usr/bin/gcc ]; then
     sudo apt update -y
     sudo apt install build-essential -y
@@ -16,5 +18,4 @@ if [[ $(ulimit -Sn) -lt 20000 ]]; then
 fi
 
 # concatenate all files from ../.brewfile.d/* and pass to xargs brew installed
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 cat $(dirname "$0")/../.brewfile.d/* | xargs brew install -q
