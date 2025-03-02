@@ -12,8 +12,19 @@ Help:
   make update              update the sources
 ```
 
-<leader>sk - all keymaps
-<leader>sr - search and replace
-https://kb.iany.me/para/lets/v/Vim/LazyVim+Shortcuts+Cheatsheet
-https://www.lazyvim.org/keymaps
+## LazyVim Folders
 
+- `~/.local/state/nvim/` log files and session state
+- `~/.local/share/nvim/` contains all installed plugins
+- `~/.cache/nvim/` not sure yet
+
+## LazyVim Useful stuff
+
+`:checkhealth` - Debug whether everything is setup properly.
+
+## Shortcuts to learn
+
+- `<leader> sh` - search help
+- `<leader> st` - search todos
+- `<leader> sk` - search key map
+- `<leader> sr` - search and replace (specter plugin)
