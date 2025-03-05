@@ -1,12 +1,11 @@
 [Midnight-Commander]
-skin=catppuccin
 verbose=true
 shell_patterns=true
 auto_save_setup=true
 preallocate_space=false
 auto_menu=false
 use_internal_view=true
-use_internal_edit=false
+use_internal_edit=true
 clear_before_exec=true
 confirm_delete=true
 confirm_overwrite=true
@@ -41,7 +40,7 @@ ftpfs_use_unix_list_options=true
 ftpfs_first_cd_then_ls=true
 ignore_ftp_chattr_errors=true
 editor_fill_tabs_with_spaces=false
-editor_return_does_auto_indent=false
+editor_return_does_auto_indent=true
 editor_backspace_through_tabs=false
 editor_fake_half_tabs=true
 editor_option_save_position=true
@@ -59,8 +58,8 @@ editor_line_state=false
 editor_simple_statusbar=false
 editor_check_new_line=false
 editor_show_right_margin=false
-editor_group_undo=true
-editor_state_full_filename=true
+editor_group_undo=false
+editor_state_full_filename=false
 editor_ask_filename_before_edit=false
 nice_rotating_dash=true
 shadows=true
@@ -76,7 +75,7 @@ num_history_items_recorded=60
 vfs_timeout=60
 ftpfs_directory_timeout=900
 ftpfs_retry_seconds=30
-fish_directory_timeout=900
+shell_directory_timeout=900
 editor_tab_spacing=8
 editor_word_wrap_line_length=72
 editor_option_save_mode=0
@@ -84,14 +83,12 @@ editor_backup_extension=~
 editor_filesize_threshold=64M
 editor_stop_format_chars=-+*\\,.;:&>
 mcview_eof=
-skin=catppuccin
-
+skin=default
 filepos_max_saved_entries=1024
-shell_directory_timeout=900
 
 [Layout]
 output_lines=0
-left_panel_size=60
+left_panel_size=97
 top_panel_size=0
 message_visible=true
 keybar_visible=true
@@ -111,7 +108,6 @@ ftpfs_password=anonymous@
 display_codepage=UTF-8
 source_codepage=Other_8_bit
 autodetect_codeset=
-spell_language=en
 clipboard_store=
 clipboard_paste=
 
@@ -119,10 +115,6 @@ clipboard_paste=
 base_color=
 xterm-256color=
 color_terminals=
-
-tmux-256color=
-
-screen-256color=
 
 [Panels]
 show_mini_info=true
@@ -145,23 +137,8 @@ torben_fj_mode=false
 quick_search_mode=2
 select_flags=6
 
-[FindFile]
-file_case_sens=true
-file_shell_pattern=true
-file_find_recurs=true
-follow_symlinks=false
-file_skip_hidden=false
-file_all_charsets=false
-content_case_sens=true
-content_regexp=false
-content_first_hit=false
-content_whole_words=false
-content_all_charsets=false
-ignore_dirs_enable=true
-ignore_dirs=
-
 [Panelize]
+Find SUID and SGID programs=find . \\( \\( -perm -04000 -a -perm /011 \\) -o \\( -perm -02000 -a -perm /01 \\) \\) -print
+Modified git files=git ls-files --modified
 Find *.orig after patching=find . -name \\*.orig -print
 Find rejects after patching=find . -name \\*.rej -print
-Modified git files=git ls-files --modified
-Find SUID and SGID programs=find . \\( \\( -perm -04000 -a -perm /011 \\) -o \\( -perm -02000 -a -perm /01 \\) \\) -print

@@ -13,7 +13,7 @@ info: ## Info about the current environment
 
 install: ## install all stows
 	@if [ "$$WSL_DISTRO_NAME" != "" ]; then \
-		stow --dir $(STOW_DIR) --target ~ $(STOW_COMMON) $(STOW_WSL); \
+		stow --adopt --dir $(STOW_DIR) --target ~ $(STOW_COMMON) $(STOW_WSL); \
 	fi
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		stow --dir $(STOW_DIR) --target ~ $(STOW_COMMON) $(STOW_OSX); \
