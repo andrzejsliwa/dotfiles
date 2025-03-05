@@ -1,1 +1,0 @@
-export OPENAI_API_KEY=$(op read op://personal/chatgpt/api-key)
