@@ -1,0 +1,5 @@
+export PM_API_TOKEN_ID=$(op read op://personal/proxmox/PM_API_TOKEN_ID)
+export PM_API_TOKEN_SECRET=$(op read op://personal/proxmox/PM_API_TOKEN_SECRET)
+export PM_API_URL=$(op read op://personal/proxmox/PM_API_URL)
+
+
