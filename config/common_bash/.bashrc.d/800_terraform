@@ -1,5 +1,5 @@
-export TF_VAR_pm_api_token_id=$(op read op://personal/proxmox/PM_API_TOKEN_ID)
-export TF_VAR_pm_api_token_secret=$(op read op://personal/proxmox/PM_API_TOKEN_SECRET)
-export TF_VAR_pm_api_url=$(op read op://personal/proxmox/PM_API_URL)
+export TF_VAR_pm_api_token_id=op://personal/proxmox/PM_API_TOKEN_ID
+export TF_VAR_pm_api_token_secret=op://personal/proxmox/PM_API_TOKEN_SECRET
+export TF_VAR_pm_api_url=op://personal/proxmox/PM_API_URL
 
 
