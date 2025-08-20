@@ -24,11 +24,15 @@ fi
 
 source $HOME/.profile
 
+echo "Apt-Get:"
 for file in $(dirname "$0")/../config/*/.apt.d/*; do 
-  cat $file | xargs sudo apt-get install -q -y
+  cat $file
+  cat $file | xargs sudo apt-get install -qq -y
 done 
 
+echo "Brew:"
 for file in $(dirname "$0")/../config/*/.brewfile.d/*; do 
+  cat $file
   cat $file | xargs brew install -q 
 done
 
