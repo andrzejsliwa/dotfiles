@@ -1,0 +1,43 @@
+[include]
+  path = user
+[alias]
+	co = checkout
+  st = status
+  pushf = push --force-with-lease
+  pullm = pull origin main
+[core]
+  autocrlf = input
+  pager = delta
+[init]
+	defaultBranch = main
+[credential "https://github.com"]
+	helper = 
+	helper = !/home/linuxbrew/.linuxbrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/home/linuxbrew/.linuxbrew/bin/gh auth git-credential
+[branch]
+  autosetuprebase = always
+[diff]
+  colorMoved = zebra
+[fetch]
+  prune = true
+[help]
+	autocorrect = 5
+[init]
+  defaultBranch = main
+[pull]
+	rebase = true
+[rebase]
+  autosquash = true
+  autoStash = true
+[interactive]
+  diffFilter = delta --color-only
+[delta]
+  navigate = true
+  side-by-side = true
+[merge]
+  conflictstyle = diff3
+
+[credential]
+	helper = /mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe

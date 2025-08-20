@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Set variables
+STOW_DIR="$(pwd)/config"
+STOW_COMMON=$(ls -d config/common_* 2>/dev/null | xargs -r basename -a)
+STOW_OSX=$(ls -d config/osx_* 2>/dev/null | xargs -r basename -a)
+STOW_WSL=$(ls -d config/wsl_* 2>/dev/null | xargs -r basename -a)
+
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+echo "Deleting stows..."
+stow --dir "$STOW_DIR" --delete --target ~ $STOW_COMMON $STOW_WSL

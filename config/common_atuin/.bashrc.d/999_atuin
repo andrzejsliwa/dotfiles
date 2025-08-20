@@ -1,0 +1,3 @@
+source ~/.local/share/blesh/ble.sh
+[[ -f ~/.local/share/preexec/bash-preexec.sh ]] && source ~/.local/share/preexec/bash-preexec.sh
+eval "$(atuin init bash)"
