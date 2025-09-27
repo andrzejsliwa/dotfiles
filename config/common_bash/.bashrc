@@ -121,3 +121,6 @@ if [ -d $HOME/.bashrc.d ]; then
 		source $file
 	done
 fi
+
+# opencode
+export PATH=/home/andrzejsliwa/.opencode/bin:$PATH
