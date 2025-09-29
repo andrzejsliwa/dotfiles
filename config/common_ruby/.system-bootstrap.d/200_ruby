@@ -1,2 +1,1 @@
-rbenv install -s 3.3.0
-rbenv global 3.3.0
+mise install ruby@3.4.5
