@@ -7,19 +7,6 @@
 # "akinomyoga/ble.sh".
 #
 # Source: /lib/core-debug.sh
-function ble/debug/setdbg {
-  ble/bin/rm -f "$_ble_base_run/dbgerr"
-  local ret
-  ble/util/readlink /proc/self/fd/3 3>&1
-  ln -s "$ret" "$_ble_base_run/dbgerr"
-}
-function ble/debug/print {
-  if [[ -e $_ble_base_run/dbgerr ]]; then
-    ble/util/print "$1" >> "$_ble_base_run/dbgerr"
-  else
-    ble/util/print "$1" >&2
-  fi
-}
 _ble_debug_check_leak_variable='local @var=__t1wJltaP9nmow__'
 function ble/debug/leakvar#reset {
   builtin eval "$1=__t1wJltaP9nmow__"
@@ -75,7 +62,7 @@ function ble/debug/print-variables {
     fi
     _ble_local_out=$_ble_local_out' '
   done
-  ble/debug/print "${_ble_local_out%' '}"
+  ble/util/print "${_ble_local_out%' '}"
 }
 _ble_debug_stopwatch=()
 function ble/debug/stopwatch/start {
@@ -153,6 +140,7 @@ function ble/debug/profiler/stop {
   elif ble/is-function ble/bin/gawk; then
     awk=ble/bin/gawk
   fi
+  local LC_ALL= LC_COLLATE=C 2>/dev/null
   "$awk" -v magic="$_ble_debug_profiler_magic" -v nline="$nline" '
     BEGIN {
       xtrace_debug_enabled = 1;
@@ -219,9 +207,9 @@ function ble/debug/profiler/stop {
       }
     }
     function str_strip_ansi(str) {
-      gsub(/\x1b\[[ -?]*[@-~]/, "", str);
-      gsub(/\x1b[ -\/]*[0-~]/, "", str);
-      gsub(/[\x01-\x1F\x7F]/, "", str);
+      gsub(/\x1b\[[ -?]*[@-~]/, "", str); # disable=#D1440 LC_COLLATE=C is set
+      gsub(/\x1b[ -\/]*[0-~]/, "", str);  # disable=#D1440 LC_COLLATE=C is set
+      gsub(/[\x01-\x1F\x7F]/, "", str);   # disable=#D1440 LC_COLLATE=C is set
       return str;
     }
     function str_html_escape(str) {
@@ -666,8 +654,8 @@ function ble/debug/profiler/stop {
       }
       pids_clear();
     }
-    mode == "line_stat" { if ($0 ~ /^['"$_ble_term_space"']*[^#'"$_ble_term_space"']/) lines_load_line(); next; }
-    mode == "func_stat" { if ($0 ~ /^['"$_ble_term_space"']*[^#'"$_ble_term_space"']/) funcs_load_line(); next; }
+    mode == "line_stat" { if ($0 ~ /^['"$_ble_term_blank"']*[^#'"$_ble_term_blank"']/) lines_load_line(); next; }
+    mode == "func_stat" { if ($0 ~ /^['"$_ble_term_blank"']*[^#'"$_ble_term_blank"']/) funcs_load_line(); next; }
     progress_interval && ++iline % progress_interval == 0 {
       print "\x1b[A\rble/debug/profiler: collecting information... " int((iline * 100) / nline) "%" >"/dev/stderr";
     }
@@ -677,7 +665,7 @@ function ble/debug/profiler/stop {
       if (fname == "(global)") {
         if (command ~ /^(ble-decode\/.hook|_ble_decode_hook) [0-9]+$/) flush_stack();
         label = command;
-        sub(/^['"$_ble_term_space"']+|['"$_ble_term_space"'].*/, "", label);
+        sub(/^['"$_ble_term_blank"']+|['"$_ble_term_blank"'].*/, "", label);
         label = sprintf("\x1b[35m%s\x1b[36m:\x1b[32m%s\x1b[36m (%s):\x1b[m", source, lineno, label);
       }
       pids_register(pid);
@@ -704,7 +692,9 @@ function ble/debug/profiler/stop {
       funcs_finalize();
       tree_finalize();
     }
-  ' "${awk_args[@]}" || return "$?"
+  ' "${awk_args[@]}"; local ext=$?
+  ble/util/unlocal LC_COLLATE LC_ALL 2>/dev/null
+  ((ext==0)) || return "$ext"
   local -a files_to_remove
   files_to_remove=("$f1")
   if [[ $profiler_line_output == *.part ]]; then
@@ -724,4 +714,38 @@ function ble/debug/profiler/stop {
       ble/array#push files_to_remove "$file.part"
   fi
   ble/bin/rm -f "${files_to_remove[@]}"
+}
+function ble/debug/xtrace.advice {
+  local filename=$1 set=$-
+  if ((_ble_bash<40100)); then
+    set -x
+    ble/function#advice/do 2>> "$filename"
+    [[ $set == *x* ]] || set +x
+    return 0
+  fi
+  local old_xtracefd=
+  [[ ${BASH_XTRACEFD-} ]] && exec {old_xtracefd}>&"$BASH_XTRACEFD"
+  local PS4='+$FUNCNAME ($BASH_SOURCE:$LINENO): ' BASH_XTRACEFD
+  exec {BASH_XTRACEFD}>> "$filename"
+  {
+    printf '# start: %(%F %T %Z)T\n' -1
+    printf '# args:'
+    printf ' %q' "${ADVICE_WORDS[@]}"
+    printf '\n'
+    printf '# caller:'
+    printf ' %q' "${ADVICE_FUNCNAME[@]:1}"
+    printf '\n'
+  } >&"$BASH_XTRACEFD"
+  ((_ble_bash>=40400)) && local -
+  set -x
+  ble/function#advice/do
+  set +x
+  printf '# end: %(%F %T %Z)T\n' -1 >&"$BASH_XTRACEFD"
+  exec {BASH_XTRACEFD}>&-
+  ble/util/unlocal BASH_XTRACEFD
+  if [[ ${old_xtracefd-} ]]; then
+    builtin eval "exec $BASH_XTRACEFD>&$old_xtracefd"
+    exec {old_xtracefd}>&-
+  fi
+  [[ $set == *x* ]] && set -x
 }

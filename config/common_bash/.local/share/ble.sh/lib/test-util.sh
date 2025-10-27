@@ -8,7 +8,7 @@
 #
 # Source: /lib/test-util.sh
 ble-import lib/core-test
-ble/test/start-section 'ble/util' 1243
+ble/test/start-section 'ble/util' 1275
 (
   ble/test 'bleopt a=1' \
            exit=2
@@ -26,7 +26,7 @@ ble/test/start-section 'ble/util' 1243
   function bleopt/check:a { value=123; }
   ble/test 'bleopt a=4 && bleopt a'
   stdout="bleopt a=123"
-  function bleopt/check:a { false; }
+  function bleopt/check:a { return 1; }
   ble/test 'bleopt a=5' \
            exit=1
   ble/test 'bleopt a' \
@@ -400,6 +400,50 @@ function is-global { (builtin readonly "$1"; ! local "$1" 2>/dev/null); }
   ble/test 'ble/array#remove-at a 25; status' stdout="25:(${a1[*]})"
   ble/test 'ble/array#remove-at a 0; status' stdout="24:(${a2[*]})"
   ble/test 'ble/array#remove-at a 7; status' stdout="23:(${a3[*]})"
+)
+(
+  function status { ble/util/print "${#a[@]}:(${a[*]})"; }
+  a=(); ble/test 'ble/array#map-prefix a hello; status' stdout='0:()'
+  a=(); ble/test 'ble/array#map-suffix a hello; status' stdout='0:()'
+  a=(); ble/test 'ble/array#map-prefix a ""; status' stdout='0:()'
+  a=(); ble/test 'ble/array#map-suffix a ""; status' stdout='0:()'
+  a=(''); ble/test 'ble/array#map-prefix a hello; status' stdout='1:(hello)'
+  a=(''); ble/test 'ble/array#map-suffix a hello; status' stdout='1:(hello)'
+  a=(''); ble/test 'ble/array#map-prefix a ""; status' stdout='1:()'
+  a=(''); ble/test 'ble/array#map-suffix a ""; status' stdout='1:()'
+  a=('' ''); ble/test 'ble/array#map-prefix a hello; status' stdout='2:(hello hello)'
+  a=('' ''); ble/test 'ble/array#map-suffix a hello; status' stdout='2:(hello hello)'
+  a=('' ''); ble/test 'ble/array#map-prefix a ""; status' stdout='2:( )'
+  a=('' ''); ble/test 'ble/array#map-suffix a ""; status' stdout='2:( )'
+  a=(ABC DEF); ble/test 'ble/array#map-prefix a hello; status' stdout='2:(helloABC helloDEF)'
+  a=(ABC DEF); ble/test 'ble/array#map-suffix a hello; status' stdout='2:(ABChello DEFhello)'
+  a=(ABC DEF); ble/test 'ble/array#map-prefix a ""; status' stdout='2:(ABC DEF)'
+  a=(ABC DEF); ble/test 'ble/array#map-suffix a ""; status' stdout='2:(ABC DEF)'
+  unset -v a; ble/test 'ble/array#map-prefix a hello; status' stdout='0:()'
+  unset -v a; ble/test 'ble/array#map-suffix a hello; status' stdout='0:()'
+  unset -v a; ble/test 'ble/array#map-prefix a ""; status' stdout='0:()'
+  unset -v a; ble/test 'ble/array#map-suffix a ""; status' stdout='0:()'
+  unset -v a; a=ABC; ble/test 'ble/array#map-prefix a hello; status' stdout='1:(helloABC)'
+  unset -v a; a=ABC; ble/test 'ble/array#map-suffix a hello; status' stdout='1:(ABChello)'
+  unset -v a; a=ABC; ble/test 'ble/array#map-prefix a ""; status' stdout='1:(ABC)'
+  unset -v a; a=ABC; ble/test 'ble/array#map-suffix a ""; status' stdout='1:(ABC)'
+)
+(
+  function status { ble/util/print "${#a[@]}:(${a[*]})"; }
+  a=(1 2 3 4 5)
+  ble/test 'ble/array#fill-range a 2 4 x; status' stdout='5:(1 2 x x 5)'
+  a=(1 2 3 4 5)
+  ble/test 'ble/array#fill-range a 2 4 ""; status' stdout='5:(1 2   5)'
+  a=(1 2 3 4 5)
+  ble/test 'ble/array#fill-range a 2 3 x; status' stdout='5:(1 2 x 4 5)'
+  a=(1 2 3 4 5)
+  ble/test 'ble/array#fill-range a 2 3 ""; status' stdout='5:(1 2  4 5)'
+  a=(1 2 3 4 5)
+  ((_ble_bash>=40300)) && shopt -u compat42
+  ble/test 'ble/array#fill-range a 1 4 "A&B"; status' stdout='5:(1 A&B A&B A&B 5)'
+  a=(1 2 3 4 5)
+  ((_ble_bash>=40300)) && shopt -s compat42
+  ble/test 'ble/array#fill-range a 1 4 "A&B"; status' stdout='5:(1 A&B A&B A&B 5)'
 )
 (
   _ble_string_prototype='        '
@@ -786,6 +830,7 @@ function is-global { (builtin readonly "$1"; ! local "$1" 2>/dev/null); }
   ble/test code:'ret=stdX:stdY:usrZ; ble/path#remove-glob ret "std[a-zX-Z]"' ret=usrZ
   ble/test code:'ret=stdX:usrZ:stdY; ble/path#remove-glob ret "std[a-zX-Z]"' ret=usrZ
   ble/test code:'ret=usrZ:stdX:stdY; ble/path#remove-glob ret "std[a-zX-Z]"' ret=usrZ
+  ble/test code:'ret=/usr/bin:/usr/local/bin:/usr/sbin:/usr/local/sbin; ble/path#remove-glob ret "/usr/local/*"' ret=/usr/bin:/usr/sbin
 )
 (
   ble/test code:'ret=; ble/path#append ret a' ret=a
@@ -1064,6 +1109,8 @@ function is-global { (builtin readonly "$1"; ! local "$1" 2>/dev/null); }
       fi
     done
   done
+  a=(1 2 3)
+  ble/test 'ble/util/writearray --nlfix a; echo x' stdout:$'1\n2\n3\n\nx'
 )
 (
   var=variable

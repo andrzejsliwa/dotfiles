@@ -18,6 +18,64 @@ function ble/string#hash-pjw {
 }
 
 #------------------------------------------------------------------------------
+# Hooks for completion loaders
+
+## @fn ble/contrib/integration:bash-completion/loader/.adjust-progcomp cmd
+##   @param[in] cmd
+##     The command name whose completion setting should be parsed and adjusted.
+function ble/contrib/integration:bash-completion/loader/.adjust-progcomp {
+  local ret
+  ble/syntax:bash/simple-word/safe-eval "$1" nonull || return 0
+  local cmd=$ret
+
+  local compdef
+  ble/util/assign compdef 'builtin complete -p -- "$cmd"' 2>/dev/null ||
+    { cmd=${cmd##*/}; ble/util/assign compdef 'builtin complete -p -- "$cmd"' 2>/dev/null; } ||
+    return 0
+  compdef=${compdef%"${cmd:-''}"}
+  compdef=${compdef%' '}' '
+
+  local comp_opts=$comp_opts comp_prog comp_func compoptions flag_noquote
+  ble/complete/progcomp/parse-complete "$compdef"
+
+  # Call adjustments based on the values of "comp_prog" and "comp_func"
+  ble/complete/progcomp/adjust-third-party-completions
+}
+
+function ble/contrib/integration:bash-completion/loader/_comp_load.advice {
+  [[ ${BLE_ATTACHED-} ]] || return 0
+  ((ADVICE_EXIT==0)) || return 0
+
+  # command-line argument parsing taken from _comp_load (bash_completion).
+  local flag_fallback_default="" IFS=$' \t\n'
+  local OPTIND=1 OPTARG="" OPTERR=0 opt
+  set -- "${ADVICE_WORDS[@]:1}"
+  while getopts ':D' opt "$@"; do
+    case $opt in
+    D) flag_fallback_default=set ;;
+    *) return 2 ;;
+    esac
+  done
+  shift "$((OPTIND - 1))"
+
+  ble/contrib/integration:bash-completion/loader/.adjust-progcomp "$@"
+}
+
+function ble/contrib/integration:bash-completion/loader/__load_completion.advice {
+  [[ ${BLE_ATTACHED-} ]] || return 0
+  ((ADVICE_EXIT==0)) || return 0
+  ble/contrib/integration:bash-completion/loader/.adjust-progcomp "$@"
+}
+
+function ble/contrib/integration:bash-completion/loader/adjust {
+  if ble/is-function _comp_load; then
+    ble/function#advice after _comp_load ble/contrib/integration:bash-completion/loader/_comp_load.advice
+  elif ble/is-function __load_completion; then
+    ble/function#advice after __load_completion ble/contrib/integration:bash-completion/loader/__load_completion.advice
+  fi
+}
+
+#------------------------------------------------------------------------------
 # Hooks for mandb
 
 ## @fn ble/contrib/integration:bash-completion/mandb/.alloc-subcache command hash [opts]
@@ -46,6 +104,7 @@ function ble/contrib/integration:bash-completion/mandb/.alloc-subcache {
 
 ## @fn ble/contrib/integration:bash-completion/mandb/_parse_help.advice command args
 function ble/contrib/integration:bash-completion/mandb/_parse_help.advice {
+  [[ ${BLE_ATTACHED-} ]] || return 0
   local cmd=$1 args=$2 func=$ADVICE_FUNCNAME
   # 現在のコマンド名。 Note: ADVICE_WORDS には実際に現在補完しようとしているコ
   # マンドとは異なるものが指定される場合があるので (例えば help や - 等) 信用で
@@ -74,8 +133,8 @@ function ble/contrib/integration:bash-completion/mandb/_parse_help.advice {
         # "[short_opt] desc".  The format is defined by
         # ble/complete/mandb:help/generate-cache.
         desc = $4;
-        gsub(/\033\[[ -?]*[@-~]/, "", desc);
-        if (match(desc, /^\[[^]'"$_ble_term_space"'[]*\] /) > 0) { # #D1709 safe
+        gsub(/\033\[[ -?]*[@-~]/, "", desc); # disable=#D1440 (LC_COLLATE=C is set)
+        if (match(desc, /^\[[^]'"$_ble_term_blank"'[]*\] /) > 0) { # #D1709 safe
           short_opt = substr(desc, 2, RLENGTH - 3);
           excludes[short_opt] =1;
         }
@@ -94,6 +153,7 @@ function ble/contrib/integration:bash-completion/mandb/_parse_help.advice {
 }
 
 function ble/contrib/integration:bash-completion/mandb/_get_help_lines.advice {
+  [[ ${BLE_ATTACHED-} ]] || return 0
   ((${#_lines[@]})) || return 0
 
   # @var cmd
@@ -115,35 +175,43 @@ function ble/contrib/integration:bash-completion/mandb/_get_help_lines.advice {
 function ble/contrib/integration:bash-completion/mandb/_comp_command_offset.yield {
   local word_offset=$1
 
-  ((${#COMPREPLY[@]})) || return 0
-
   # Other variables for ble/complete/progcomp/process-compgen-output
-  local comp_words comp_cword
-  comp_words=("${COMP_WORDS[@]:word_offset}")
+  local comp_words comp_cword comp_line comp_point IFS=$' \t\n'
   comp_cword=$((COMP_CWORD-word_offset))
   ((comp_cword==0)) && return 0
+  comp_words=("${COMP_WORDS[@]:word_offset}")
+  comp_line="${comp_words[*]}"
+  comp_point="${comp_words[*]::comp_cword+1}"
+  comp_point=${#comp_point}
+
+  if ((${#COMPREPLY[@]}==0)); then
+    ble/complete/source:argument/fallback reuse-comp_words; local ext=$?
+    compopt +o ble/default +o default +o dirnames
+    return "$ext"
+  fi
 
   # Input
-  local compgen
-  ble/util/sprintf compgen '%s\n' "${COMPREPLY[@]}"
+  local compgen parse_compgen_opts=array
+  compgen=("${COMPREPLY[@]}")
   COMPREPLY=()
 
   # Arguments for ble/complete/progcomp/process-compgen-output
   local cmd=${comp_words[0]} ret
   ble/syntax:bash/simple-word/safe-eval "$cmd" nonull && cmd=$ret
-  local parse_compgen_opts=
   [[ ${cmd##*/} == git ]] && parse_compgen_opts=work-around-git
 
   ble/complete/progcomp/process-compgen-output "$cmd" "$parse_compgen_opts"
 }
 
 function ble/contrib/integration:bash-completion/mandb/_comp_command_offset.advice {
+  [[ ${BLE_ATTACHED-} ]] || return 0
   local REPLY
   _comp__find_original_word "${ADVICE_WORDS[1]}"
   ble/contrib/integration:bash-completion/mandb/_comp_command_offset.yield "$REPLY"
 }
 
 function ble/contrib/integration:bash-completion/mandb/_command_offset.advice {
+  [[ ${BLE_ATTACHED-} ]] || return 0
   local word_offset=${ADVICE_WORDS[1]} i j
   for ((i=0;i<word_offset;i++)); do
     for ((j=0;j<=${#COMP_LINE};j++)); do
@@ -182,12 +250,12 @@ function ble/contrib/integration:bash-completion/mandb/adjust {
 
 #------------------------------------------------------------------------------
 
-function ble/contrib/integration:bash-completion/_comp_cmd_make.advice {
+function ble/contrib/integration:bash-completion/cmd-with-conditional-sync.advice {
   if [[ ${BLE_ATTACHED-} ]]; then
     ble/function#push "${ADVICE_WORDS[1]}" '
-      local -a make_args; make_args=("${ADVICE_WORDS[1]}" "$@")
+      local -a cmd_args; cmd_args=("${ADVICE_WORDS[1]}" "$@")
       ble/util/conditional-sync \
-        '\''command "${make_args[@]}"'\'' \
+        '\''command "${cmd_args[@]}"'\'' \
         '\''! ble/complete/check-cancel'\'' 128 progressive-weight:killall'
     ble/function#advice/do
     ble/function#pop "${ADVICE_WORDS[1]}"
@@ -196,13 +264,47 @@ function ble/contrib/integration:bash-completion/_comp_cmd_make.advice {
   fi
 }
 
+function ble/contrib/integration:bash-completion/_do_dnf5_completion.advice {
+  ble/contrib/integration:bash-completion/cmd-with-conditional-sync.advice "$@"
+  [[ ${BLE_ATTACHED-} ]] || return 0
+  if ((${#COMPREPLY[@]}>=2)); then
+    local i has_desc=
+    for i in "${!COMPREPLY[@]}"; do
+      if ble/string#match "${COMPREPLY[i]}" '[[:blank:]]+\((.*)\)$'; then
+        local cand=${COMPREPLY[i]%"$BASH_REMATCH"} desc=${BASH_REMATCH[1]}
+        if [[ $cand && $cand != "${COMPREPLY[i]}" ]]; then
+          ble/complete/cand/yield word "$cand" "$desc"
+          has_desc=1
+          builtin unset -v 'COMPREPLY[i]'
+          continue
+        fi
+      fi
+
+      if [[ ! -e ${COMPREPLY[i]} ]]; then
+        ble/complete/cand/yield word "$cand"
+        builtin unset -v 'COMPREPLY[i]'
+      fi
+    done
+
+    COMPREPLY=("${COMPREPLY[@]}")
+    [[ $has_desc ]] && bleopt complete_menu_style=desc
+  fi
+}
+
 function ble/contrib/integration:bash-completion/adjust {
   ble/is-function _comp_initialize || ble/is-function _quote_readline_by_ref || return 0
 
-  ble/is-function _comp_cmd_make &&
-    ble/function#advice around _comp_cmd_make 'ble/contrib/integration:bash-completion/_comp_cmd_make.advice'
-  ble/is-function _make &&
-    ble/function#advice around _make 'ble/contrib/integration:bash-completion/_comp_cmd_make.advice'
+  ble/contrib/integration:bash-completion/loader/adjust
+
+  _ble_contrib_integration_bash_completion_cmd_conditional_sync=(_comp_cmd_make _make _do_dnf5_completion)
+
+  if [[ $comp_func == _comp_cmd_make || $comp_func == _make ]]; then
+    ble/is-function "$comp_func" &&
+      ble/function#advice around "$comp_func" ble/contrib/integration:bash-completion/cmd-with-conditional-sync.advice
+  elif [[ $comp_func == _do_dnf5_completion ]]; then
+    ble/is-function "$comp_func" &&
+      ble/function#advice around "$comp_func" ble/contrib/integration:bash-completion/_do_dnf5_completion.advice
+  fi
 
   if ((BASH_COMPLETION_VERSINFO[0]<2||BASH_COMPLETION_VERSINFO[0]==2&&BASH_COMPLETION_VERSINFO[1]<12)); then
     # Fix issues with bash-completion <= 2.11

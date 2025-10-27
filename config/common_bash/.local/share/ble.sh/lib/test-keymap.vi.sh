@@ -145,8 +145,10 @@ function ble/keymap:vi_test/section:macro {
   local _ble_keymap_vi_test_ble_decode=ble-decode-char
   local ble_decode_char_sync=1
   ble/function#push ble/util/is-stdin-ready '((0))'
-  ble/test/start-section "ble/keymap.vi/macro" 1
+  ble/test/start-section "ble/keymap.vi/macro" 3
   ble/keymap:vi_test/check A1 '@:@123' 'q a A SP h e l l o @ESC q @ a' '@:123 hello hell@o'
+  ble/keymap:vi_test/check A2 '@:1@23' 'ESC O C' '@:12@3'
+  ble/keymap:vi_test/check A3 '@:1@23' 'ESC O @timeout C' $'@:C@\n123'
   ble/test/end-section
   ble/function#pop ble/util/is-stdin-ready
 }

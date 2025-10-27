@@ -26,7 +26,7 @@ See [Sec 1.3](#set-up-bashrc) for the details of the setup of your `~/.bashrc`.
 
 > [!NOTE]
 > If you want to **use fzf with `ble.sh`**, you need to check [Sec
-> 2.8](#fzf-integration).
+> 2.8](#fzf-integration) to avoid compatibility problems.
 
 <details open><summary><b>Download source using <code>git</code> and make <code>ble.sh</code></b></summary>
 
@@ -44,7 +44,7 @@ source ble.sh/out/ble.sh
 
 git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git
 make -C ble.sh install PREFIX=~/.local
-echo 'source ~/.local/share/blesh/ble.sh' >> ~/.bashrc
+echo 'source -- ~/.local/share/blesh/ble.sh' >> ~/.bashrc
 ```
 
 The build process integrates multiple Bash script files into a single Bash script `ble.sh` with pre-processing.
@@ -66,7 +66,7 @@ source ble-nightly/ble.sh
 
 curl -L https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJf -
 bash ble-nightly/ble.sh --install ~/.local/share
-echo 'source ~/.local/share/blesh/ble.sh' >> ~/.bashrc
+echo 'source -- ~/.local/share/blesh/ble.sh' >> ~/.bashrc
 ```
 
 After the installation, the directory `ble-nightly` can be removed.
@@ -86,7 +86,7 @@ source ble-nightly/ble.sh
 
 wget -O - https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJf -
 bash ble-nightly/ble.sh --install ~/.local/share
-echo 'source ~/.local/share/blesh/ble.sh' >> ~/.bashrc
+echo 'source -- ~/.local/share/blesh/ble.sh' >> ~/.bashrc
 ```
 
 After the installation, the directory `ble-nightly` can be removed.
@@ -416,7 +416,7 @@ but a more reliable way is to add the following codes to your `.bashrc` file:
 # bashrc
 
 # Add this lines at the top of .bashrc:
-[[ $- == *i* ]] && source /path/to/blesh/ble.sh --noattach
+[[ $- == *i* ]] && source -- /path/to/blesh/ble.sh --attach=none
 
 # your bashrc settings come here...
 
@@ -424,26 +424,32 @@ but a more reliable way is to add the following codes to your `.bashrc` file:
 [[ ! ${BLE_VERSION-} ]] || ble-attach
 ```
 
-Basically, when `source /path/to/ble.sh` and `ble-attach` are performed,
+Basically, when `source -- /path/to/ble.sh` and `ble-attach` are performed,
 standard streams (`stdin`, `stdout`, and `stderr`) should not be redirected but should be connected to the controlling TTY of the current session.
-Also, please avoid calling `source /path/to/ble.sh` in shell functions.
+Also, please avoid calling `source -- /path/to/ble.sh` in shell functions.
 The detailed conditions where the above *more reliable setup* is needed are explained in [an answer in Discussion #254](https://github.com/akinomyoga/ble.sh/discussions/254#discussioncomment-4284757).
 
 ## 1.4 User settings `~/.blerc`
 
-User settings can be placed in the init script `~/.blerc` (or `${XDG_CONFIG_HOME:-$HOME/.config}/blesh/init.sh` if `~/.blerc` is not available)
-whose template is available as the file [`blerc.template`](https://github.com/akinomyoga/ble.sh/blob/master/blerc.template) in the repository.
-The init script is a Bash script that is sourced during the load of `ble.sh`, so any shell commands can be used in `~/.blerc`.
-If you want to change the default path of the init script, you can add the option `--rcfile INITFILE` to `source ble.sh` as the following example:
+User settings can be placed in the init script `~/.blerc` (or
+`${XDG_CONFIG_HOME:-$HOME/.config}/blesh/init.sh` if `~/.blerc` is not
+available).  The init script is a Bash script that is sourced during the load
+of `ble.sh`, so any shell commands can be used in `~/.blerc`.  If you want to
+change the default path of the init script, you can add the option `--rcfile
+INITFILE` to `source ble.sh` as the following example: A template for the init
+script is available as the file
+[`blerc.template`](https://github.com/akinomyoga/ble.sh/blob/master/blerc.template)
+in the repository, but please note that you need to use the template in the
+commit corresponding to your copy of `ble.sh`.
 
 ```bash
 # in bashrc
 
 # Example 1: ~/.blerc will be used by default
-[[ $- == *i* ]] && source /path/to/blesh/ble.sh --noattach
+[[ $- == *i* ]] && source -- /path/to/blesh/ble.sh --attach=none
 
 # Example 2: /path/to/your/blerc will be used
-[[ $- == *i* ]] && source /path/to/blesh/ble.sh --noattach --rcfile /path/to/your/blerc
+[[ $- == *i* ]] && source -- /path/to/blesh/ble.sh --attach=none --rcfile /path/to/your/blerc
 ```
 
 ## 1.5 Update
@@ -490,6 +496,42 @@ Basically you can simply delete the installed directory and the settings that th
 - Remove the cache directory `~/.cache/blesh` if any.
 - Remove the temporary directory `/tmp/blesh` if any [ Only needed when your system does not automatically clear `/tmp` ].
 
+## 1.7 Troubleshooting
+
+- [Performance](https://github.com/akinomyoga/ble.sh/wiki/Performance)
+  describes hints for perfomance issue.
+- [Reporting Issue](https://github.com/akinomyoga/ble.sh/wiki/Reporting-Issue)
+  describes information that you may check before reporting an issue.
+
+### Clearing cache
+
+It should not happen in theory, but users occasionally report that they
+happened to become unable to input anything with `ble.sh`.  We could not manage
+to reproduce the problem or identify the cause so far, but it seems to be
+solved by clearing the cache of `ble.sh` by running the following command from
+another session without `ble.sh`:
+
+```console
+$ bash /path/to/ble.sh --clear-cache
+```
+
+To start a session without `ble.sh`, one may directly edit `~/.bashrc` to
+comment out the line sourcing `ble.sh`.  Or one might launch a different shell
+such as `ash`, `dash`, `ksh`, or `zsh`.  Another option is to configure the
+terminal so that the command-line options passed to the shell include `--norc`.
+If the problem happens in the remote host and you do not have an access to the
+session without `ble.sh`, you can non-interactively rename your `~/.bashrc`:
+
+```console
+# Example (ssh)
+
+local$ ssh remote 'mv .bashrc .bashrc.backup'
+
+# Example (rsh)
+
+local$ rsh remote 'mv .bashrc .bashrc.backup'
+```
+
 # 2 Basic settings
 
 Here, some of the settings for `~/.blerc` are picked up.
@@ -505,8 +547,12 @@ For the vi/vim mode, check [the wiki page](https://github.com/akinomyoga/ble.sh/
 
 ## 2.2 Disable features
 
-One of frequently asked questions is the way to disable a specific feature that `ble.sh` adds.
-Here the settings for disabling features are summarized.
+One of frequently asked questions is the way to disable a specific feature that
+`ble.sh` adds.  Here the settings for disabling features are summarized.  See
+also the settings
+[`config/readline`](https://github.com/akinomyoga/blesh-contrib/blob/master/config/readline.bash),
+which can be loaded by `ble-import config/readline` to make `ble.sh`'s behavior
+similar to Readline.
 
 ```bash
 # Disable syntax highlighting
@@ -682,6 +728,8 @@ ble-face -s argument_error            fg=black,bg=225
 
 # highlighting for completions
 ble-face -s auto_complete             fg=238,bg=254
+ble-face -s menu_complete_match       bold
+ble-face -s menu_complete_selected    reverse
 ble-face -s menu_desc_default         none
 ble-face -s menu_desc_type            ref:syntax_delimiter
 ble-face -s menu_desc_quote           ref:syntax_quoted
@@ -742,6 +790,8 @@ The list of widgets is shown by the following command:
 $ ble-bind -L
 ```
 
+Descriptions of widgets can be found in the manual on the wiki.
+
 If you want to run multiple widgets with a key, you can define your own widget by creating a function of the name `ble/widget/YOUR_WIDGET_NAME`
 as illustrated in the following example.
 It is highly recommended to prefix the widget name with `YOUR_NAME/`, `my/`, `blerc/`, `dotfiles/`, etc.
@@ -760,7 +810,7 @@ ble-bind -f C-t my/example1
 
 ## 2.8 fzf integration<sup><a id="fzf-integration" href="#fzf-integration">†</a></sup>
 
-If you would like to use `fzf` in combination with `ble.sh`, you need to configure `fzf` using [the `contrib/fzf` integration](https://github.com/akinomyoga/blesh-contrib#pencil-fzf-integration).
+If you would like to use `fzf` in combination with `ble.sh`, you need to configure `fzf` using [the `contrib/fzf` integration](https://github.com/akinomyoga/blesh-contrib#pencil-fzf-integration) to avoid compatibility issues.
 Please follow the instructions in the link for the detailed description.
 
 ```bash
@@ -871,6 +921,8 @@ For example, with the following settings, typing `~mybin/` expands it to e.g. `/
 
 ble-sabbrev "~mybin=$HOME/bin"
 ```
+
+See [the sabbrev section in Manual](https://github.com/akinomyoga/ble.sh/wiki/Manual-%C2%A77-Completion#user-content-sec-sabbrev) for more usages.
 
 # 4 Contributors
 

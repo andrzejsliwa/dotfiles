@@ -27,7 +27,7 @@
 `~/.bashrc` の設定の詳細に関しては [節1.3](#set-up-bashrc) を御覧ください。
 
 > [!NOTE]
-> `fzf` を `ble.sh` と組み合わせてお使いの場合は [節2.8](#fzf-integration) を必ず御覧ください。
+> `fzf` を `ble.sh` と組み合わせてお使いの場合は互換性の問題を避けるため [節2.8](#fzf-integration) を必ず御覧ください。
 
 <details open><summary><b><code>git</code> を用いてソースを取得し <code>ble.sh</code> を生成</b></summary>
 
@@ -45,7 +45,7 @@ source ble.sh/out/ble.sh
 
 git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git
 make -C ble.sh install PREFIX=~/.local
-echo 'source ~/.local/share/blesh/ble.sh' >> ~/.bashrc
+echo 'source -- ~/.local/share/blesh/ble.sh' >> ~/.bashrc
 ```
 
 生成過程では、複数のBashスクリプトファイルを前処理・結合することで `ble.sh` を生成し、
@@ -68,7 +68,7 @@ source ble-nightly/ble.sh
 
 curl -L https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJf -
 bash ble-nightly/ble.sh --install ~/.local/share
-echo 'source ~/.local/share/blesh/ble.sh' >> ~/.bashrc
+echo 'source -- ~/.local/share/blesh/ble.sh' >> ~/.bashrc
 ```
 
 インストール後はディレクトリ `ble-nightly` は削除して問題ありません。
@@ -88,7 +88,7 @@ source ble-nightly/ble.sh
 
 wget -O - https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz | tar xJf -
 bash ble-nightly/ble.sh --install ~/.local/share
-echo 'source ~/.local/share/blesh/ble.sh' >> ~/.bashrc
+echo 'source -- ~/.local/share/blesh/ble.sh' >> ~/.bashrc
 ```
 
 インストール後はディレクトリ `ble-nightly` は削除して問題ありません。
@@ -375,7 +375,7 @@ GitHub Releases から `ble.sh` の tarball をダウンロードすることも
 # bashrc
 
 # .bashrc の先頭近くに以下を追加して下さい。
-[[ $- == *i* ]] && source /path/to/blesh/ble.sh --noattach
+[[ $- == *i* ]] && source -- /path/to/blesh/ble.sh --attach=none
 
 # 間に通常の bashrc の内容を既述します。
 
@@ -383,26 +383,27 @@ GitHub Releases から `ble.sh` の tarball をダウンロードすることも
 [[ ! ${BLE_VERSION-} ]] || ble-attach
 ```
 
-`source /path/to/ble.sh` 及び `ble-attach` を呼び出す時は、
+`source -- /path/to/ble.sh` 及び `ble-attach` を呼び出す時は、
 標準ストリーム (`stdin`, `stdout`, `stderr`) が現在のセッションの制御端末とは別の物にリダイレクトされていない様にして下さい。
-`source /path/to/ble.sh` をシェル関数の中から実行するのは避けて下さい。
+`source -- /path/to/ble.sh` をシェル関数の中から実行するのは避けて下さい。
 この「より確実な設定」が必要になる詳細な条件については [Discussion #254 への回答 (英語)](https://github.com/akinomyoga/ble.sh/discussions/254#discussioncomment-4284757) で説明されています。
 
 ## 1.4 初期化スクリプト `~/.blerc`
 
 ユーザー設定は初期化スクリプト `~/.blerc` (またはもし `~/.blerc` が見つからなければ `${XDG_CONFIG_HOME:-$HOME/.config}/blesh/init.sh`) に記述します。
-テンプレートとしてリポジトリの [`blerc.template`](https://github.com/akinomyoga/ble.sh/blob/master/blerc.template) というファイルを利用できます。
 初期化スクリプトは `ble.sh` ロード時に自動で読み込まれる Bash スクリプトなので、Bash で使えるコマンドを初期化スクリプトの中で利用できます。
 初期化スクリプトの位置を変更する場合には、`source ble.sh` 時に `--rcfile INITFILE` を指定します。以下に例を挙げます。
+テンプレートとしてリポジトリの [`blerc.template`](https://github.com/akinomyoga/ble.sh/blob/master/blerc.template) というファイルを利用できます
+(お使いの `ble.sh` に対応する commit のテンプレートファイルを使う必要があることにご注意ください)。
 
 ```bash
 # in bashrc
 
 # Example 1: ~/.blerc will be used by default
-[[ $- == *i* ]] && source /path/to/blesh/ble.sh --noattach
+[[ $- == *i* ]] && source -- /path/to/blesh/ble.sh --attach=none
 
 # Example 2: /path/to/your/blerc will be used
-[[ $- == *i* ]] && source /path/to/blesh/ble.sh --noattach --rcfile /path/to/your/blerc
+[[ $- == *i* ]] && source -- /path/to/blesh/ble.sh --attach=none --rcfile /path/to/your/blerc
 ```
 
 ## 1.5 アップデート
@@ -449,6 +450,39 @@ make INSDIR="$HOME/.local/share/blesh" install
 - キャッシュディレクトリ `~/.cache/blesh` が生成されていればそれを削除します。
 - 一時ディレクトリ `/tmp/blesh` が生成されていればそれを削除します。これは `/tmp` の内容が自動的にクリアされないシステムで必要です。
 
+## 1.7 トラブルシューティング
+
+- [Performance](https://github.com/akinomyoga/ble.sh/wiki/Performance) (英語)
+  では `ble.sh` の動作速度の改善に関する情報について説明しています。
+- [Reporting Issue](https://github.com/akinomyoga/ble.sh/wiki/Reporting-Issue)
+  (英語) では問題報告をする前に確認しておくと良い情報を説明しています。
+
+### キャッシュの消去
+
+原理的に発生しないはずなのですが「`ble.sh` で何も入力できなくなってしまった」という報告が偶にあります。
+原因不明で再現もできないため現在調査中ですが、`ble.sh` のキャッシュを消去すると直ることが多いようです。
+`ble.sh` をロードしていないセッションで以下のコマンドを実行することでキャッシュを消去できます。
+
+```bash
+$ bash /path/to/ble.sh --clear-cache
+```
+
+`ble.sh` をロードしていないセッションを開始するには、
+例えば `~/.bashrc` を編集して `ble.sh` をソースしている行をコメントアウトしてから Bash を開始してください。
+または Bash 以外のシェル (`ash`, `dash`, `ksh`, `zsh` など) を使うこともお考えください。
+もし問題が直接アクセスできないリモートホストで発生していて問題のない既存のセッションがない場合は、
+非対話的なコマンドで `~/.bashrc` を移動することで `~/.bashrc` を無効化できます。
+
+```console
+# 例 (ssh)
+
+local$ ssh remote 'mv .bashrc .bashrc.backup'
+
+# 例 (rsh)
+
+local$ rsh remote 'mv .bashrc .bashrc.backup'
+```
+
 # 2 基本設定
 
 ここでは `~/.blerc` に記述する基本的な設定を幾つか紹介します。
@@ -466,6 +500,8 @@ Vim モードについては [Wiki の説明ページ](https://github.com/akinom
 
 よくお尋ね頂くご質問の一つにそれぞれの機能をどのように無効化すれば良いのかというものが御座います。
 各機能の無効化方法を以下にまとめます。
+`ble.sh` の振る舞いを Readline に近づける設定 [`config/readline`](https://github.com/akinomyoga/blesh-contrib/blob/master/config/readline.bash)
+(`ble-import config/readline` で読み込めます) も御覧ください。
 
 ```bash
 # 構文着色を無効化
@@ -639,6 +675,8 @@ ble-face -s argument_error            fg=black,bg=225
 
 # 補完の着色
 ble-face -s auto_complete             fg=238,bg=254
+ble-face -s menu_complete_match       bold
+ble-face -s menu_complete_selected    reverse
 ble-face -s menu_desc_default         none
 ble-face -s menu_desc_type            ref:syntax_delimiter
 ble-face -s menu_desc_quote           ref:syntax_quoted
@@ -699,6 +737,8 @@ $ ble-bind -P
 $ ble-bind -L
 ```
 
+それぞれの編集関数の説明は wiki のマニュアルを参照して下さい。
+
 一つのキーで複数の編集関数を呼び出したい場合は、以下の例の様に、
 `ble/widget/編集関数の名前` という名前のシェル関数を通して新しい編集関数を定義できます。
 既存の標準の編集関数と名前が重複しない様に、
@@ -717,7 +757,7 @@ ble-bind -f C-t my/example1
 
 ## 2.8 fzf との統合<sup><a id="fzf-integration" href="#fzf-integration">†</a></sup>
 
-`fzf` を `ble.sh` と一緒にお使いいただく場合には、[`contrib/fzf` 統合機能](https://github.com/akinomyoga/blesh-contrib#pencil-fzf-integration) を用いて `fzf` を設定していただく必要があります。
+`fzf` を `ble.sh` と一緒にお使いいただく場合には、互換性の問題を避けるために、[`contrib/fzf` 統合機能](https://github.com/akinomyoga/blesh-contrib#pencil-fzf-integration) を用いて `fzf` を設定していただく必要があります。
 詳細についてはリンク先の説明を御覧ください。
 
 ```bash
@@ -826,6 +866,8 @@ ble-sabbrev '\L'='| less'
 
 ble-sabbrev "~mybin=$HOME/bin"
 ```
+
+その他の詳細については [マニュアルの静的略語展開の節](https://github.com/akinomyoga/ble.sh/wiki/Manual-%C2%A77-Completion#user-content-sec-sabbrev) を御覧ください。
 
 # 4 謝辞
 

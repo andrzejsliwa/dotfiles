@@ -7,6 +7,119 @@
 # "akinomyoga/ble.sh".
 #
 # Source: /lib/init-cmap.sh
+function ble/init:cmap/initialize-kbd {
+  ble/decode/kbd/.set-keycode TAB  9
+  ble/decode/kbd/.set-keycode RET  13
+  ble/decode/kbd/.set-keycode NUL  0
+  ble/decode/kbd/.set-keycode SOH  1
+  ble/decode/kbd/.set-keycode STX  2
+  ble/decode/kbd/.set-keycode ETX  3
+  ble/decode/kbd/.set-keycode EOT  4
+  ble/decode/kbd/.set-keycode ENQ  5
+  ble/decode/kbd/.set-keycode ACK  6
+  ble/decode/kbd/.set-keycode BEL  7
+  ble/decode/kbd/.set-keycode BS   8
+  ble/decode/kbd/.set-keycode HT   9  # aka TAB
+  ble/decode/kbd/.set-keycode LF   10
+  ble/decode/kbd/.set-keycode VT   11
+  ble/decode/kbd/.set-keycode FF   12
+  ble/decode/kbd/.set-keycode CR   13 # aka RET
+  ble/decode/kbd/.set-keycode SO   14
+  ble/decode/kbd/.set-keycode SI   15
+  ble/decode/kbd/.set-keycode DLE  16
+  ble/decode/kbd/.set-keycode DC1  17
+  ble/decode/kbd/.set-keycode DC2  18
+  ble/decode/kbd/.set-keycode DC3  19
+  ble/decode/kbd/.set-keycode DC4  20
+  ble/decode/kbd/.set-keycode NAK  21
+  ble/decode/kbd/.set-keycode SYN  22
+  ble/decode/kbd/.set-keycode ETB  23
+  ble/decode/kbd/.set-keycode CAN  24
+  ble/decode/kbd/.set-keycode EM   25
+  ble/decode/kbd/.set-keycode SUB  26
+  ble/decode/kbd/.set-keycode ESC  27
+  ble/decode/kbd/.set-keycode FS   28
+  ble/decode/kbd/.set-keycode GS   29
+  ble/decode/kbd/.set-keycode RS   30
+  ble/decode/kbd/.set-keycode US   31
+  ble/decode/kbd/.set-keycode SP   32
+  ble/decode/kbd/.set-keycode DEL  127
+  ble/decode/kbd/.set-keycode PAD  128
+  ble/decode/kbd/.set-keycode HOP  129
+  ble/decode/kbd/.set-keycode BPH  130
+  ble/decode/kbd/.set-keycode NBH  131
+  ble/decode/kbd/.set-keycode IND  132
+  ble/decode/kbd/.set-keycode NEL  133
+  ble/decode/kbd/.set-keycode SSA  134
+  ble/decode/kbd/.set-keycode ESA  135
+  ble/decode/kbd/.set-keycode HTS  136
+  ble/decode/kbd/.set-keycode HTJ  137
+  ble/decode/kbd/.set-keycode VTS  138
+  ble/decode/kbd/.set-keycode PLD  139
+  ble/decode/kbd/.set-keycode PLU  140
+  ble/decode/kbd/.set-keycode RI   141
+  ble/decode/kbd/.set-keycode SS2  142
+  ble/decode/kbd/.set-keycode SS3  143
+  ble/decode/kbd/.set-keycode DCS  144
+  ble/decode/kbd/.set-keycode PU1  145
+  ble/decode/kbd/.set-keycode PU2  146
+  ble/decode/kbd/.set-keycode STS  147
+  ble/decode/kbd/.set-keycode CCH  148
+  ble/decode/kbd/.set-keycode MW   149
+  ble/decode/kbd/.set-keycode SPA  150
+  ble/decode/kbd/.set-keycode EPA  151
+  ble/decode/kbd/.set-keycode SOS  152
+  ble/decode/kbd/.set-keycode SGCI 153
+  ble/decode/kbd/.set-keycode SCI  154
+  ble/decode/kbd/.set-keycode CSI  155
+  ble/decode/kbd/.set-keycode ST   156
+  ble/decode/kbd/.set-keycode OSC  157
+  ble/decode/kbd/.set-keycode PM   158
+  ble/decode/kbd/.set-keycode APC  159
+  ble/decode/kbd/.set-keycode @ESC     "$_ble_decode_IsolatedESC"
+  ble/decode/kbd/.set-keycode @NUL     "$_ble_decode_EscapedNUL"
+  ble/decode/kbd/.set-keycode @prefixO "$_ble_decode_PrefixO"
+  ble/decode/kbd/.set-keycode @timeout "$_ble_decode_Timeout"
+  local ret
+  ble/decode/kbd/.generate-keycode __batch_char__
+  _ble_decode_KCODE_BATCH_CHAR=$ret
+  ble/decode/kbd/.generate-keycode __defchar__
+  _ble_decode_KCODE_DEFCHAR=$ret
+  ble/decode/kbd/.generate-keycode __default__
+  _ble_decode_KCODE_DEFAULT=$ret
+  ble/decode/kbd/.generate-keycode __before_widget__
+  _ble_decode_KCODE_BEFORE_WIDGET=$ret
+  ble/decode/kbd/.generate-keycode __after_widget__
+  _ble_decode_KCODE_AFTER_WIDGET=$ret
+  ble/decode/kbd/.generate-keycode __attach__
+  _ble_decode_KCODE_ATTACH=$ret
+  ble/decode/kbd/.generate-keycode __detach__
+  _ble_decode_KCODE_DETACH=$ret
+  ble/decode/kbd/.generate-keycode shift
+  _ble_decode_KCODE_SHIFT=$ret
+  ble/decode/kbd/.generate-keycode alter
+  _ble_decode_KCODE_ALTER=$ret
+  ble/decode/kbd/.generate-keycode control
+  _ble_decode_KCODE_CONTROL=$ret
+  ble/decode/kbd/.generate-keycode meta
+  _ble_decode_KCODE_META=$ret
+  ble/decode/kbd/.generate-keycode super
+  _ble_decode_KCODE_SUPER=$ret
+  ble/decode/kbd/.generate-keycode hyper
+  _ble_decode_KCODE_HYPER=$ret
+  ble/decode/kbd/.generate-keycode __ignore__
+  _ble_decode_KCODE_IGNORE=$ret
+  ble/decode/kbd/.generate-keycode __error__
+  _ble_decode_KCODE_ERROR=$ret
+  ble/decode/kbd/.generate-keycode __line_limit__
+  _ble_decode_KCODE_LINE_LIMIT=$ret
+  ble/decode/kbd/.generate-keycode mouse
+  _ble_decode_KCODE_MOUSE=$ret
+  ble/decode/kbd/.generate-keycode mouse_move
+  _ble_decode_KCODE_MOUSE_MOVE=$ret
+  ble/decode/kbd/.generate-keycode ac_enter
+  builtin unset -f "$FUNCNAME"
+}
 function ble/init:cmap/bind-single-csi {
   ble-bind -k "ESC [ $1" "$2"
   ble-bind -k "CSI $1" "$2"
@@ -21,17 +134,17 @@ function ble/init:cmap/bind-keypad-key {
   (($3&1)) && ble/init:cmap/bind-single-ss3 "$Ft" "$name"
   (($3&2)) && ble-bind -k "ESC ? $Ft" "$name"
 }
-function ble/init:cmap/initialize {
+function ble/init:cmap/initialize-keys {
   ble/edit/info/immediate-show text "ble/lib/init-cmap.sh: updating key sequences..."
   local ret
-  ble-decode-kbd/generate-keycode insert
-  ble-decode-kbd/generate-keycode home
-  ble-decode-kbd/generate-keycode prior
-  ble-decode-kbd/generate-keycode delete
-  ble-decode-kbd/generate-keycode end
-  ble-decode-kbd/generate-keycode next
-  ble-decode-kbd/generate-keycode find
-  ble-decode-kbd/generate-keycode select
+  ble/decode/kbd/.generate-keycode insert
+  ble/decode/kbd/.generate-keycode home
+  ble/decode/kbd/.generate-keycode prior
+  ble/decode/kbd/.generate-keycode delete
+  ble/decode/kbd/.generate-keycode end
+  ble/decode/kbd/.generate-keycode next
+  ble/decode/kbd/.generate-keycode find
+  ble/decode/kbd/.generate-keycode select
   local kend; ble/util/assign kend 'tput @7 2>/dev/null || tput kend 2>/dev/null'
   if [[ $kend == $'\e[5~' ]]; then
     ble-bind --csi '1~' insert
@@ -188,8 +301,32 @@ function ble/init:cmap/initialize {
   )
   local keyname
   for keyname in "${_ble_decode_csimap_kitty_u[@]}"; do
-    ble-decode-kbd/generate-keycode "$keyname"
+    ble/decode/kbd/.generate-keycode "$keyname"
   done
+  ble/init:cmap/bind-single-csi '0 n' dsr0
   ble/edit/info/immediate-show text "ble/lib/init-cmap.sh: updating key sequences... done"
+  builtin unset -f "$FUNCNAME"
+}
+function ble/init:cmap/initialize {
+  ble/edit/info/immediate-show text 'ble.sh: generating "'"$dump"'"...'
+  ble/init:cmap/initialize-kbd
+  ble/init:cmap/initialize-keys
+  local hash='015701ad744b9fdedb46d589a94ac9af5a8fdb60'
+  ble-bind -D | ble/bin/awk -v hash="$hash" '
+    {
+      sub(/^declare +(-[aAilucnrtxfFgGI]+ +)?/, "");
+      sub(/^-- +/, "");
+    }
+    /^_ble_decode_(cmap|KCODE|csimap|kbd)/ {
+      if (!($0 ~ /^_ble_decode_csimap_kitty_u/))
+        gsub(/["'\'']/, "");
+      print
+    }
+    END {
+      print "_ble_decode_cmap_cache_hash='\''" hash "'\''";
+    }
+  ' >| "$dump"
+  [[ $_ble_attached ]] || ble/edit/info/immediate-clear
+  builtin unset -f "$FUNCNAME"
 }
 ble/init:cmap/initialize

@@ -7,24 +7,34 @@
 # "akinomyoga/ble.sh".
 #
 # Source: /ble.pp
+# Source: /src/def.sh
+# Source: /src/util.sh
+# Source: /src/util.hook.sh
 # Source: /src/benchmark.sh
-# Source: /src/canvas.GraphemeClusterBreak.sh
-# Source: /src/canvas.c2w.musl.sh
+# Source: /src/decode.sh
+# Source: /src/color.sh
+# Source: /src/canvas.sh
 # Source: /src/canvas.c2w.sh
 # Source: /src/canvas.emoji.sh
-# Source: /src/canvas.sh
-# Source: /src/color.sh
-# Source: /src/decode.sh
-# Source: /src/def.sh
-# Source: /src/edit.sh
+# Source: /src/canvas.c2w.musl.sh
+# Source: /src/canvas.GraphemeClusterBreak.sh
 # Source: /src/history.sh
-# Source: /src/util.hook.sh
-# Source: /src/util.sh
+# Source: /src/edit.sh
+# Source: /lib/core-cmdspec-def.sh
+# Source: /lib/core-syntax-def.sh
+# Source: /lib/core-complete-def.sh
+# Source: /lib/core-debug-def.sh
+# Source: /contrib/integration/bash-preexec-def.sh
 {
-  _ble_init_version=0.4.0-nightly+32f290d
+  _ble_init_version=0.4.0-nightly+2f564e6
   _ble_init_exit=
   _ble_init_command=
+  _ble_init_skip=
   for _ble_init_arg; do
+    if [ -n "$_ble_init_skip" ]; then
+      _ble_init_skip=
+      continue
+    fi
     case $_ble_init_arg in
     --version)
       _ble_init_exit=0
@@ -41,14 +51,16 @@
              '    Show this help and exit' \
              '  --version' \
              '    Show version and exit' \
-             '  --test' \
-             '    Run test and exit' \
-             '  --update' \
-             '    Update ble.sh and exit' \
              '  --clear-cache' \
              '    Clear ble.sh cache and exit' \
              '  --install PREFIX' \
              '    Install ble.sh and exit' \
+             '  --lib' \
+             '    Only load ble.sh and do nothing else' \
+             '  --test' \
+             '    Run test and exit' \
+             '  --update' \
+             '    Update ble.sh and exit' \
              '' \
              '  --rcfile=BLERC' \
              '  --init-file=BLERC' \
@@ -100,8 +112,13 @@
              '    Internal settings for debugging' \
              '' ;;
     --test | --update | --clear-cache | --lib | --install) _ble_init_command=1 ;;
+    -o | --attach | --inputrc | --rcfile | --init-file | --bash-debug-version) _ble_init_skip=1 ;;
+    -o* | --attach=* | --inputrc=* | --rcfile=* | --init-file=* | --bash-debug-version=*) ;;
+    noattach | --noattach | --noinputrc | --norc | --keep-rlvars | --debug-bash-output) ;;
+    -*) _ble_init_command=error ;;
     esac
   done
+  unset _ble_init_skip
   unset _ble_init_arg
   if [ -n "$_ble_init_exit" ]; then
     unset _ble_init_exit
@@ -134,7 +151,10 @@ if [[ ! $_ble_init_command ]]; then
     esac &&
       builtin echo "ble.sh: This is not an interactive session." >&3 || ((1))
     _ble_init_exit=1
-  elif ! [[ -t 4 && -t 5 ]] && ! { [[ ${bleopt_connect_tty-} ]] && >/dev/tty; }; then
+  elif ! [[ -t 4 && -t 5 ]] &&
+      ! [[ :${bleopt_connect_tty-}: == *:inherit:* && -t ${_ble_util_fd_tty_stdin:-} && -t ${_ble_util_fd_tty_stdout:-} ]] 2>/dev/null &&
+      ! { [[ ${bleopt_connect_tty-} ]] && >/dev/tty; }
+  then
     if [[ ${bleopt_connect_tty-} ]]; then
       builtin echo "ble.sh: cannot find a controlling TTY/PTY in this session." >&3
     else
@@ -289,22 +309,15 @@ function ble/base/evaldef {
   [[ :$shopt: != *:expand_aliases:* ]] || shopt -s expand_aliases
   return "$ext"
 }
+if ((_ble_bash>=50300)); then
+  function ble/util/assign { builtin eval -- "$1=\${ builtin eval -- \"\$2\"; }"; }
+else
+  function ble/util/assign { builtin eval -- "$1=\$(builtin eval -- \"\$2\")"; }
+fi
 {
   _ble_bash_builtins_adjusted=
   _ble_bash_builtins_save=
 } 2>/dev/null # set -x 対策
-function ble/base/adjust-builtin-wrappers/.assign {
-  if [[ ${_ble_util_assign_base-} ]]; then
-    local _ble_local_tmpfile; ble/util/assign/mktmp
-    builtin eval -- "$1" >| "$_ble_local_tmpfile"
-    local IFS=
-    ble/bash/read -d '' defs < "$_ble_local_tmpfile"
-    IFS=$_ble_term_IFS
-    ble/util/assign/rmtmp
-  else
-    defs=$(builtin eval -- "$1")
-  fi || ((1))
-}
 function ble/base/adjust-builtin-wrappers/.impl1 {
   unset -f builtin
   builtin local builtins1 keywords1
@@ -313,7 +326,7 @@ function ble/base/adjust-builtin-wrappers/.impl1 {
   if [[ ! $_ble_bash_builtins_adjusted ]]; then
     _ble_bash_builtins_adjusted=1
     builtin local defs
-    ble/base/adjust-builtin-wrappers/.assign '
+    ble/util/assign defs '
       \builtin declare -f "${builtins1[@]}" || ((1))
       \builtin alias "${builtins1[@]}" "${keywords1[@]}" || ((1))' # set -e 対策
     _ble_bash_builtins_save=$defs
@@ -325,7 +338,7 @@ function ble/base/adjust-builtin-wrappers/.impl1 {
 }
 function ble/base/adjust-builtin-wrappers/.impl2 {
   local defs
-  ble/base/adjust-builtin-wrappers/.assign 'LC_ALL= LC_MESSAGES=C builtin type :; alias :' || ((1)) # set -e 対策
+  ble/util/assign defs 'LC_ALL= LC_MESSAGES=C builtin type :; alias :' || ((1)) # set -e 対策
   defs=${defs#$': is a shell builtin\n'}
   _ble_bash_builtins_save=$_ble_bash_builtins_save$'\n'$defs
   builtin unset -f :
@@ -382,7 +395,9 @@ function ble/base/xtrace/.log {
   if ((_ble_bash>=40200)); then
     builtin printf '%s [%(%F %T %Z)T] %s %s\n' "$open" -1 "$1" "$close"
   else
-    builtin printf '%s [%s] %s %s\n' "$open" "$(date 2>/dev/null)" "$1" "$close"
+    local date
+    ble/util/assign date 'date 2>/dev/null'
+    builtin printf '%s [%s] %s %s\n' "$open" "$date" "$1" "$close"
   fi >&"${BASH_XTRACEFD:-2}"
 }
 function ble/base/xtrace/adjust {
@@ -561,11 +576,17 @@ function ble/variable#load-user-state/variable:LANG {
   [[ $_ble_bash_LC_ALL ]] && ble/variable#load-user-state/variable:LC_ALL/.impl LANG
 }
 { ble/base/adjust-bash-options; } &>/dev/null # set -x 対策 #D0930
-builtin bind &>/dev/null # force to load .inputrc
-if [[ $OSTYPE == msys* ]]; then
-  [[ $(builtin bind -m emacs -p 2>/dev/null | grep '"\\C-?"') == '"\C-?": backward-kill-line' ]] &&
-    builtin bind -m emacs '"\C-?": backward-delete-char' 2>/dev/null
-fi
+function ble/init/force-load-inputrc {
+  builtin unset -f "$FUNCNAME"
+  builtin bind &>/dev/null # force to load .inputrc
+  if [[ $OSTYPE == msys* ]]; then
+    local bind_emacs
+    ble/util/assign bind_emacs 'builtin bind -m emacs -p 2>/dev/null'
+    [[ $'\n'$bind_emacs$'\n' == *$'\n"\\C-?": backward-kill-line\n' ]] &&
+      builtin bind -m emacs '"\C-?": backward-delete-char' 2>/dev/null
+  fi
+}
+ble/init/force-load-inputrc
 if [[ ! -o emacs && ! -o vi && ! $_ble_init_command ]]; then
   builtin echo "ble.sh: ble.sh is not intended to be used with the line-editing mode disabled (--noediting)." >&2
   ble/base/restore-bash-options
@@ -919,11 +940,6 @@ if ((50200<=_ble_bash&&_ble_bash<50300)); then
     return "$_ble_local_ext"
   }
 fi
-if ((_ble_bash>=50300)); then
-  function ble/util/assign { builtin eval "$1=\${ builtin eval -- \"\$2\"; }"; }
-else
-  function ble/util/assign { builtin eval "$1=\$(builtin eval -- \"\$2\")"; }
-fi
 if ((_ble_bash>=40000)); then
   function ble/bin#has { builtin type -t -- "$@" &>/dev/null; }
 else
@@ -935,7 +951,11 @@ else
 fi
 function ble/bin#get-path {
   local cmd=$1
-  ble/util/assign path 'builtin type -P -- "$cmd" 2>/dev/null' && [[ $path ]]
+  ble/util/assign path 'builtin type -P -- "$cmd" 2>/dev/null' && [[ $path ]] || return 1
+  if [[ ( $path == ./* || $path == ../* ) && -r $PWD/$path && -x $PWD/$path ]]; then
+    path=$PWD/$path
+  fi
+  return 0
 }
 function ble/bin/.default-utility-path {
   local cmd
@@ -950,11 +970,10 @@ function ble/bin#freeze-utility-path {
       flags=n$flags
       continue
     fi
-    [[ $flags == *n* ]] && ble/bin#has "ble/bin/$cmd" && continue
-    ble/bin#has "ble/bin/.frozen:$cmd" && continue
+    [[ $flags == *n* ]] && ble/bin#has ble/bin/"$cmd" && continue
+    ble/bin#has ble/bin/.frozen:"$cmd" && continue
     if ble/bin#get-path "$cmd"; then
-      [[ $path == ./* || $path == ../* ]] && path=$PWD/$path
-      builtin eval "function ble/bin/$cmd { '${path//$q/$Q}' \"\$@\"; }"
+      builtin eval "function ble/bin/$cmd { command '${path//$q/$Q}' \"\$@\"; }"
     else
       fail=1
     fi
@@ -966,12 +985,13 @@ function ble/init/check-environment {
   if ! ble/bin#has "${_ble_init_posix_command_list[@]}"; then
     local cmd commandMissing=
     for cmd in "${_ble_init_posix_command_list[@]}"; do
-      if ! type "$cmd" &>/dev/null; then
+      if ! ble/bin#has "$cmd"; then
         commandMissing="$commandMissing\`$cmd', "
       fi
     done
-    ble/util/print "ble.sh: insane environment: The command(s), ${commandMissing}not found. Check your environment variable PATH." >&2
-    local default_path=$(command -p getconf PATH 2>/dev/null)
+    ble/util/print "ble.sh: insane environment: The command(s), ${commandMissing}are not found. Check your environment variable PATH. If these commands are not available in your system, please install them." >&2
+    local default_path
+    ble/util/assign default_path 'command -p getconf PATH 2>/dev/null'
     [[ $default_path ]] || return 1
     local original_path=$PATH
     export PATH=${default_path}${PATH:+:}${PATH}
@@ -984,25 +1004,32 @@ function ble/init/check-environment {
     ble/util/print "ble.sh: modified PATH=${PATH::${#PATH}-${#original_path}}\$PATH" >&2
   fi
   if [[ ! ${USER-} ]]; then
-    ble/util/print "ble.sh: insane environment: \$USER is empty." >&2
-    if USER=$(id -un 2>/dev/null) && [[ $USER ]]; then
+    ble/util/print-lines \
+      'ble.sh: insane environment: $USER is empty.  Please consider checking the' \
+      '  terminal'\''s settings or setting export USER=$(id -un) in your .bash_profile.' >&2
+    if ble/util/assign USER 'id -un 2>/dev/null' && [[ $USER ]]; then
       export USER
       ble/util/print "ble.sh: modified USER=$USER" >&2
     fi
   fi
   _ble_base_env_USER=$USER
   if [[ ! ${HOSTNAME-} ]]; then
-    ble/util/print "ble.sh: suspicious environment: \$HOSTNAME is empty."
-    if HOSTNAME=$(uname -n 2>/dev/null) && [[ $HOSTNAME ]]; then
+    ble/util/print-lines \
+      'ble.sh: suspicious environment: $HOSTNAME is empty.  Please consider checking' \
+      '  the terminal'\''settings or setting export HOSTNAME=$(hostname), etc. in your' \
+      '  .bash_profile' >&2
+    if ble/util/assign HOSTNAME 'uname -n 2>/dev/null' && [[ $HOSTNAME ]]; then
       export HOSTNAME
       ble/util/print "ble.sh: fixed HOSTNAME=$HOSTNAME" >&2
     fi
   fi
   _ble_base_env_HOSTNAME=$HOSTNAME
   if [[ ! ${HOME-} ]]; then
-    ble/util/print "ble.sh: insane environment: \$HOME is empty." >&2
+    ble/util/print-lines \
+      'ble.sh: insane environment: $HOME is empty.  Please consider checking' \
+      '  the terminal'\''s settings or setting export HOME=... in your .bash_profile.' >&2
     local home
-    if home=$(getent passwd 2>/dev/null | awk -F : -v UID="$UID" '$3 == UID {print $6}') && [[ $home && -d $home ]] ||
+    if ble/util/assign home 'getent passwd 2>/dev/null | awk -F : -v UID="$UID" '\''$3 == UID {print $6}'\''' && [[ $home && -d $home ]] ||
         { [[ $USER && -d /home/$USER && -O /home/$USER ]] && home=/home/$USER; } ||
         { [[ $USER && -d /Users/$USER && -O /Users/$USER ]] && home=/Users/$USER; } ||
         { [[ $home && ! ( -e $home && -h $home ) ]] && ble/bin/mkdir -p "$home" 2>/dev/null; }
@@ -1012,7 +1039,9 @@ function ble/init/check-environment {
     fi
   fi
   if [[ ! ${LANG-} ]]; then
-    ble/util/print "ble.sh: suspicious environment: \$LANG is empty." >&2
+    ble/util/print-lines \
+      'ble.sh: suspicious environment: $LANG is empty.  Please consider checking the' \
+      '  terminal'\''s settings or setting export LANG=... in your .bash_profile.' >&2
   fi
   if ((_ble_bash>=50200)); then
     local error
@@ -1038,41 +1067,38 @@ _ble_bin_awk_type=
 function ble/bin/awk/.instantiate {
   local path q=\' Q="'\''" ext=1
   if ble/bin#get-path nawk; then
-    [[ $path == ./* || $path == ../* ]] && path=$PWD/$path
     local version
     ble/util/assign version '"$path" -W version' 2>/dev/null </dev/null
     if [[ $version != *'GNU Awk'* && $version != *mawk* ]]; then
-      builtin eval "function ble/bin/nawk { '${path//$q/$Q}' -v AWKTYPE=nawk \"\$@\"; }"
+      builtin eval "function ble/bin/nawk { command '${path//$q/$Q}' -v AWKTYPE=nawk \"\$@\"; }"
       if [[ ! $_ble_bin_awk_type ]]; then
         _ble_bin_awk_type=nawk
-        builtin eval "function ble/bin/awk { '${path//$q/$Q}' -v AWKTYPE=nawk \"\$@\"; }" && ext=0
+        builtin eval "function ble/bin/awk { command '${path//$q/$Q}' -v AWKTYPE=nawk \"\$@\"; }" && ext=0
       fi
     fi
   fi
   if ble/bin#get-path mawk; then
-    [[ $path == ./* || $path == ../* ]] && path=$PWD/$path
-    builtin eval "function ble/bin/mawk { '${path//$q/$Q}' -v AWKTYPE=mawk \"\$@\"; }"
+    builtin eval "function ble/bin/mawk { command '${path//$q/$Q}' -v AWKTYPE=mawk \"\$@\"; }"
     if [[ ! $_ble_bin_awk_type ]]; then
       _ble_bin_awk_type=mawk
-      builtin eval "function ble/bin/awk { '${path//$q/$Q}' -v AWKTYPE=mawk \"\$@\"; }" && ext=0
+      builtin eval "function ble/bin/awk { command '${path//$q/$Q}' -v AWKTYPE=mawk \"\$@\"; }" && ext=0
     fi
   fi
   if ble/bin#get-path gawk; then
-    [[ $path == ./* || $path == ../* ]] && path=$PWD/$path
-    builtin eval "function ble/bin/gawk { '${path//$q/$Q}' -v AWKTYPE=gawk \"\$@\"; }"
+    builtin eval "function ble/bin/gawk { command '${path//$q/$Q}' -v AWKTYPE=gawk \"\$@\"; }"
     if [[ ! $_ble_bin_awk_type ]]; then
       _ble_bin_awk_type=gawk
-      builtin eval "function ble/bin/awk { '${path//$q/$Q}' -v AWKTYPE=gawk \"\$@\"; }" && ext=0
+      builtin eval "function ble/bin/awk { command '${path//$q/$Q}' -v AWKTYPE=gawk \"\$@\"; }" && ext=0
     fi
   fi
   if [[ ! $_ble_bin_awk_type ]]; then
-    if [[ $OSTYPE == solaris* ]] && type /usr/xpg4/bin/awk >/dev/null; then
+    if [[ $OSTYPE == solaris* ]] && ble/bin#has /usr/xpg4/bin/awk; then
       _ble_bin_awk_type=xpg4
       function ble/bin/awk { /usr/xpg4/bin/awk -v AWKTYPE=xpg4 "$@"; } && ext=0
     elif ble/bin#get-path awk; then
-      [[ $path == ./* || $path == ../* ]] && path=$PWD/$path
       local version
-      ble/util/assign version '"$path" -W version || "$path" --version' 2>/dev/null </dev/null
+      ble/util/assign version '"$path" -W version' 2>/dev/null </dev/null && [[ $version ]] ||
+        ble/util/assign version '"$path" --version' 2>/dev/null </dev/null
       if [[ $version == *'GNU Awk'* ]]; then
         _ble_bin_awk_type=gawk
       elif [[ $version == *mawk* ]]; then
@@ -1082,16 +1108,16 @@ function ble/bin/awk/.instantiate {
       else
         _ble_bin_awk_type=unknown
       fi
-      builtin eval "function ble/bin/awk { '${path//$q/$Q}' -v AWKTYPE=$_ble_bin_awk_type \"\$@\"; }" && ext=0
+      builtin eval "function ble/bin/awk { command '${path//$q/$Q}' -v AWKTYPE=$_ble_bin_awk_type \"\$@\"; }" && ext=0
       if [[ $OSTYPE == darwin* && $path == /usr/bin/awk && $_ble_bin_awk_type == nawk ]]; then
         function ble/bin/awk {
-          local LC_ALL= LC_CTYPE=C 2>/dev/null
+          local -x LC_ALL= LC_CTYPE=C LC_COLLATE=C 2>/dev/null
           /usr/bin/awk -v AWKTYPE=nawk "$@"; local ext=$?
-          ble/util/unlocal LC_ALL LC_CTYPE 2>/dev/null
+          ble/util/unlocal LC_ALL LC_CTYPE LC_COLLATE 2>/dev/null
           return "$ext"
         }
-      elif [[ $_ble_bin_awk_type == [gmn]awk ]] && ! ble/is-function "ble/bin/$_ble_bin_awk_type" ; then
-        builtin eval "function ble/bin/$_ble_bin_awk_type { '${path//$q/$Q}' -v AWKTYPE=$_ble_bin_awk_type \"\$@\"; }"
+      elif [[ $_ble_bin_awk_type == [gmn]awk ]] && ! ble/is-function ble/bin/"$_ble_bin_awk_type" ; then
+        builtin eval "function ble/bin/$_ble_bin_awk_type { command '${path//$q/$Q}' -v AWKTYPE=$_ble_bin_awk_type \"\$@\"; }"
       fi
     fi
   fi
@@ -1108,6 +1134,55 @@ function ble/bin/.frozen:awk { return 0; }
 function ble/bin/.frozen:nawk { return 0; }
 function ble/bin/.frozen:mawk { return 0; }
 function ble/bin/.frozen:gawk { return 0; }
+if [[ $OSTYPE == darwin* ]]; then
+  function ble/bin/sed/.instantiate {
+    local path=
+    ble/bin#get-path sed || return 1
+    if [[ $path == /usr/bin/sed ]]; then
+      function ble/bin/sed {
+        local -x LC_ALL= LC_CTYPE=C LC_COLLATE=C 2>/dev/null
+        /usr/bin/sed "$@"; local ext=$?
+        ble/util/unlocal LC_ALL LC_CTYPE LC_COLLATE 2>/dev/null
+        return "$ext"
+      }
+    else
+      local q=\' Q="'\''"
+      builtin eval "function ble/bin/sed { command '${path//$q/$Q}' \"\$@\"; }"
+    fi
+    return 0
+  }
+  function ble/bin/sed {
+    if ble/bin/sed/.instantiate; then
+      ble/bin/sed "$@"
+    else
+      command sed "$@"
+    fi
+  }
+  function ble/bin/.frozen:sed { return 0; }
+  function ble/bin/stty/.instantiate {
+    local path=
+    ble/bin#get-path stty || return 1
+    if [[ $path == */coreutils/libexec/gnubin/stty ]]; then
+      if [[ -r /bin/stty && -x /bin/stty ]]; then
+        path=/bin/stty
+      fi
+    fi
+    local q=\' Q="'\''"
+    builtin eval "function ble/bin/stty { command '${path//$q/$Q}' \"\$@\"; }"
+    return 0
+  }
+  function ble/bin/stty {
+    if ble/bin/stty/.instantiate; then
+      ble/bin/stty "$@"
+    else
+      command stty "$@"
+    fi
+  }
+  function ble/bin/.frozen:stty { return 0; }
+else
+  function ble/bin/sed/.instantiate { return 0; }
+  function ble/bin/stty/.instantiate { return 0; }
+fi
 function ble/bin/awk0.available/test {
   local count=0 cmd_awk=$1 awk_script='BEGIN { RS = "\0"; } { count++; } END { print count; }'
   ble/util/assign count 'printf "a\0b\0" | "$cmd_awk" "$awk_script"'
@@ -1239,6 +1314,15 @@ function ble/util/readlink {
   ret=$1
   if [[ -h $ret ]]; then ble/util/readlink/.resolve; fi
 }
+function ble/init/adjust-environment {
+  builtin unset -f "$FUNCNAME"
+  if [[ ${IN_NIX_SHELL-} ]]; then
+    local ret=
+    ble/util/readlink "/proc/$$/exe" 2>/dev/null
+    [[ -x $ret ]] && BASH=$ret
+  fi
+}
+ble/init/adjust-environment
 _ble_bash_path=
 function ble/bin/.load-builtin {
   local name=$1 path=$2
@@ -1575,14 +1659,14 @@ function ble-reload {
   ble/util/unlocal name
   ble/array#push _ble_local_options '--bash-debug-version=ignore'
   builtin eval -- "$_ble_bash_POSIXLY_CORRECT_local_leave"
-  source "$_ble_base/ble.sh" "${_ble_local_options[@]}"
+  source -- "$_ble_base/ble.sh" "${_ble_local_options[@]}"
 }
-_ble_base_repository=release:nightly-20240924+32f290d
-_ble_base_branch=master
+_ble_base_repository=release:nightly-20251019+2f564e6
+_ble_base_branch='master'
 _ble_base_repository_url=https://github.com/akinomyoga/ble.sh
-_ble_base_build_git_version="git version 2.46.0"
-_ble_base_build_make_version="GNU Make 4.3"
-_ble_base_build_gawk_version="GNU Awk 5.1.0, API: 3.0 (GNU MPFR 4.1.0, GNU MP 6.2.1)"
+_ble_base_build_git_version='git version 2.51.0'
+_ble_base_build_make_version='GNU Make 4.3'
+_ble_base_build_gawk_version='GNU Awk 5.2.1, API 3.2, PMA Avon 8-g1, (GNU MPFR 4.2.1, GNU MP 6.3.0)'
 function ble-update/.check-install-directory-ownership {
   if [[ ! -O $_ble_base ]]; then
     ble/util/print 'ble-update: install directory is owned by another user:' >&2
@@ -1808,7 +1892,7 @@ _ble_term_SOH=$'\001'
 _ble_term_DEL=$'\177'
 _ble_term_IFS=$' \t\n'
 _ble_term_CR=$'\r'
-_ble_term_space=$' \t' # WA #D2055
+_ble_term_blank=$' \t' # WA #D2055
 function blehook/declare {
   local name=$1
   builtin eval "_ble_hook_h_$name=()"
@@ -1931,72 +2015,74 @@ function bleopt/expand-variable-pattern {
 }
 function bleopt/.read-arguments {
   flags= pvars=() specs=()
+  local stop_option=
   while (($#)); do
     local arg=$1; shift
-    case $arg in
-    (--)
-      ble/array#push specs "$@"
-      break ;;
-    (-)
-      ble/util/print "bleopt: unrecognized argument '$arg'." >&2
-      flags=E$flags ;;
-    (--*)
-      bleopt/.read-arguments/process-option "${arg:2}" ;;
-    (-*)
-      local i c
-      for ((i=1;i<${#arg};i++)); do
-        c=${arg:i:1}
-        case $c in
-        (r) bleopt/.read-arguments/process-option reset ;;
-        (u) bleopt/.read-arguments/process-option changed ;;
-        (I) bleopt/.read-arguments/process-option initialize ;;
-        (*)
-          ble/util/print "bleopt: unrecognized option '-$c'." >&2
-          flags=E$flags ;;
-        esac
-      done ;;
-    (*)
-      if local rex='^([_a-zA-Z0-9@*?]+)(:?=|$)(.*)'; [[ $arg =~ $rex ]]; then
-        local name=${BASH_REMATCH[1]#bleopt_}
-        local var=bleopt_$name
-        local op=${BASH_REMATCH[2]}
-        local value=${BASH_REMATCH[3]}
-        if [[ $op == ':=' ]]; then
-          if [[ $var == *[@*?]* ]]; then
-            ble/util/print "bleopt: \`${var#bleopt_}': wildcard cannot be used in the definition." >&2
-            flags=E$flags
-            continue
-          fi
-        else
-          local ret; bleopt/expand-variable-pattern "$var"
-          var=()
-          local v i=0
-          for v in "${ret[@]}"; do
-            ble/is-function "bleopt/obsolete:${v#bleopt_}" && continue
-            var[i++]=$v
-          done
-          [[ ${#var[@]} == 0 ]] && var=("${ret[@]}")
-          if ((${#var[@]}==0)); then
-            ble/util/print "bleopt: option \`$name' not found" >&2
-            flags=E$flags
-            continue
-          fi
-        fi
-        if [[ $op ]]; then
-          var=("${var[@]}") # #D1570: WA bash-3.0 ${scal[@]/x} bug
-          if ((_ble_bash>=40300)) && ! shopt -q compat42; then
-            ble/array#push specs "${var[@]/%/"=$value"}" # WA #D1570 #D1751 checked
-          else
-            ble/array#push specs "${var[@]/%/=$value}" # WA #D1570 #D1738 checked
-          fi
-        else
-          ble/array#push pvars "${var[@]}"
+    if [[ ! $stop_option && $arg == -?* ]]; then
+      case $arg in
+      (--)
+        stop_option=1 ;;
+      (--*)
+        bleopt/.read-arguments/process-option "${arg:2}" ;;
+      (*)
+        local i c
+        for ((i=1;i<${#arg};i++)); do
+          c=${arg:i:1}
+          case $c in
+          (r) bleopt/.read-arguments/process-option reset ;;
+          (u) bleopt/.read-arguments/process-option changed ;;
+          (I) bleopt/.read-arguments/process-option initialize ;;
+          (*)
+            ble/util/print "bleopt: unrecognized option '-$c'." >&2
+            flags=E$flags ;;
+          esac
+        done ;;
+      esac
+      continue
+    elif local rex='^([_a-zA-Z0-9@*?]+)([:+-]?=|$)(.*)'; [[ $arg =~ $rex ]]; then
+      local name=${BASH_REMATCH[1]#bleopt_}
+      local var
+      var=("bleopt_$name")
+      local op=${BASH_REMATCH[2]}
+      local value=${BASH_REMATCH[3]}
+      if [[ $op == ':=' ]]; then
+        if [[ $var == *[@*?]* ]]; then
+          ble/util/print "bleopt: \`${var#bleopt_}': wildcard cannot be used in the definition." >&2
+          flags=E$flags
+          continue
         fi
       else
-        ble/util/print "bleopt: unrecognized argument '$arg'" >&2
-        flags=E$flags
-      fi ;;
-    esac
+        local ret; bleopt/expand-variable-pattern "$var"
+        var=()
+        local v i=0
+        for v in "${ret[@]}"; do
+          ble/is-function "bleopt/obsolete:${v#bleopt_}" && continue
+          var[i++]=$v
+        done
+        if ((${#var[@]} == 0 && ${#ret[*]})); then
+          if [[ $op == [+-]= ]]; then
+            ble/util/print "bleopt: \`$op' cannot be applied to the obsolete option(s), \`$name'" >&2
+            flags=E$flags
+            continue
+          fi
+          var=("${ret[@]}")
+        fi
+        if ((${#var[@]}==0)); then
+          ble/util/print "bleopt: option \`$name' not found" >&2
+          flags=E$flags
+          continue
+        fi
+      fi
+      if [[ $op ]]; then
+        ble/array#map-suffix var "${op#:}$value"
+        ble/array#push specs "${var[@]}"
+      else
+        ble/array#push pvars "${var[@]}"
+      fi
+    else
+      ble/util/print "bleopt: unrecognized argument '$arg'" >&2
+      flags=E$flags
+    fi
   done
 }
 function bleopt/changed.predicate {
@@ -2016,7 +2102,7 @@ function bleopt {
     return 2
   elif [[ $flags == *H* ]]; then
     ble/util/print-lines \
-      'usage: bleopt [OPTION] [NAME|NAME=VALUE|NAME:=VALUE]...' \
+      'usage: bleopt [OPTION] [NAME|NAME=VALUE|NAME[:+-]=VALUE]...' \
       '    Set ble.sh options. Without arguments, this prints all the settings.' \
       '' \
       '  Options' \
@@ -2031,6 +2117,8 @@ function bleopt {
       '    NAME        Print the value of the option.' \
       '    NAME=VALUE  Set the value to the option.' \
       '    NAME:=VALUE Set or create the value to the option.' \
+      '    NAME+=VALUE Add the value to the colon-separated list.' \
+      '    NAME-=VALUE Remove the value to the colon-separated list.' \
       '' \
       '  NAME can contain "@", "*", and "?" as wildcards.' \
       ''
@@ -2066,7 +2154,19 @@ function bleopt {
   if ((${#specs[@]})); then
     local spec
     for spec in "${specs[@]}"; do
-      local var=${spec%%=*} value=${spec#*=}
+      if ! ble/string#match "$spec" '^([_a-zA-Z0-9]+)([+-]?=)(.*)$'; then
+        ble/util/print "bleopt: internal error: unrecognized assignment ($spec)." >&2
+        return 3
+      fi
+      local var=${BASH_REMATCH[1]} op=${BASH_REMATCH[2]} value=${BASH_REMATCH[3]}
+      if [[ $op == [+-]= ]]; then
+        local rhs=$value value=${!var}
+        if [[ $op == += ]]; then
+          ble/opts#append-unique value "$rhs"
+        else
+          ble/opts#remove value "$rhs"
+        fi
+      fi
       [[ ${!var+set} && ${!var} == "$value" ]] && continue
       if ble/is-function bleopt/check:"${var#bleopt_}"; then
         local bleopt_source=${BASH_SOURCE[1]}
@@ -2116,10 +2216,14 @@ function bleopt/declare/.check-renamed-option {
   return 0
 }
 function bleopt/declare {
-  local type=$1 name=bleopt_$2 default_value=$3
+  local type=$1 name=bleopt_$2 default_value=${3-}
   case $type in
   (-o)
-    builtin eval -- "$name='[obsolete: renamed to $3]'"
+    if [[ ${3-} ]]; then
+      builtin eval -- "$name='[obsolete: renamed to $3]'"
+    else
+      builtin eval -- "$name='[obsolete]'"
+    fi
     builtin eval -- "function bleopt/check:$2 { bleopt/declare/.check-renamed-option $2 $3; }"
     builtin eval -- "function bleopt/obsolete:$2 { return 0; }" ;;
   (-n)
@@ -2146,25 +2250,20 @@ function bleopt/reinitialize {
 }
 bleopt/declare -n input_encoding UTF-8
 function bleopt/check:input_encoding {
-  if ! ble/is-function "ble/encoding:$value/decode"; then
-    ble/util/print "bleopt: Invalid value input_encoding='$value'." \
-                 "A function 'ble/encoding:$value/decode' is not defined." >&2
+  if ! ble/is-function ble/encoding:"$value"/decode; then
+    ble/util/print "bleopt: Invalid value input_encoding='$value'. A function 'ble/encoding:$value/decode' is not defined." >&2
     return 1
-  elif ! ble/is-function "ble/encoding:$value/b2c"; then
-    ble/util/print "bleopt: Invalid value input_encoding='$value'." \
-                 "A function 'ble/encoding:$value/b2c' is not defined." >&2
+  elif ! ble/is-function ble/encoding:"$value"/b2c; then
+    ble/util/print "bleopt: Invalid value input_encoding='$value'. A function 'ble/encoding:$value/b2c' is not defined." >&2
     return 1
-  elif ! ble/is-function "ble/encoding:$value/c2bc"; then
-    ble/util/print "bleopt: Invalid value input_encoding='$value'." \
-                 "A function 'ble/encoding:$value/c2bc' is not defined." >&2
+  elif ! ble/is-function ble/encoding:"$value"/c2bc; then
+    ble/util/print "bleopt: Invalid value input_encoding='$value'. A function 'ble/encoding:$value/c2bc' is not defined." >&2
     return 1
-  elif ! ble/is-function "ble/encoding:$value/generate-binder"; then
-    ble/util/print "bleopt: Invalid value input_encoding='$value'." \
-                 "A function 'ble/encoding:$value/generate-binder' is not defined." >&2
+  elif ! ble/is-function ble/encoding:"$value"/generate-binder; then
+    ble/util/print "bleopt: Invalid value input_encoding='$value'. A function 'ble/encoding:$value/generate-binder' is not defined." >&2
     return 1
-  elif ! ble/is-function "ble/encoding:$value/is-intermediate"; then
-    ble/util/print "bleopt: Invalid value input_encoding='$value'." \
-                 "A function 'ble/encoding:$value/is-intermediate' is not defined." >&2
+  elif ! ble/is-function ble/encoding:"$value"/is-intermediate; then
+    ble/util/print "bleopt: Invalid value input_encoding='$value'. A function 'ble/encoding:$value/is-intermediate' is not defined." >&2
     return 1
   fi
   if [[ $bleopt_input_encoding != "$value" ]]; then
@@ -2202,7 +2301,11 @@ function ble/util/save-vars {
   local __ble_name __ble_prefix=$1; shift
   for __ble_name; do
     if ble/is-array "$__ble_name"; then
-      builtin eval "$__ble_prefix$__ble_name=(\"\${$__ble_name[@]}\")"
+      if ble/array#is-sparse "$__ble_name"; then
+        ble/idict#copy "$__ble_prefix$__ble_name" "$__ble_name"
+      else
+        builtin eval "$__ble_prefix$__ble_name=(\"\${$__ble_name[@]}\")"
+      fi
     else
       builtin eval "$__ble_prefix$__ble_name=\"\$$__ble_name\""
     fi
@@ -2212,7 +2315,11 @@ function ble/util/restore-vars {
   local __ble_name __ble_prefix=$1; shift
   for __ble_name; do
     if ble/is-array "$__ble_prefix$__ble_name"; then
-      builtin eval "$__ble_name=(\${$__ble_prefix$__ble_name[@]+\"\${$__ble_prefix$__ble_name[@]}\"})"
+      if ble/array#is-sparse "$__ble_name"; then
+        ble/idict#copy "$__ble_name" "$__ble_prefix$__ble_name"
+      else
+        builtin eval "$__ble_name=(\${$__ble_prefix$__ble_name[@]+\"\${$__ble_prefix$__ble_name[@]}\"})"
+      fi
     else
       builtin eval "$__ble_name=\"\${$__ble_prefix$__ble_name-}\""
     fi
@@ -2286,8 +2393,11 @@ else
     builtin eval "[[ \$decl$1 =~ \$rex ]]"
   }
   ((_ble_bash>=40000)) ||
-    function ble/is-assoc { false; }
+    function ble/is-assoc { return 1; }
 fi
+function ble/array#is-sparse {
+  builtin eval "((\${#$1[@]})) && set -- \"\${$1[@]:\${#$1[@]}:1}\"" && (($#))
+}
 function ble/array#set { builtin eval "$1=(\"\${@:2}\")"; }
 if ((_ble_bash>=40000)); then
   function ble/array#push {
@@ -2429,13 +2539,77 @@ function ble/array#remove-at {
     NAME=("${NAME[@]}")
   '; builtin eval -- "${_ble_local_script//NAME/$1}"
 }
+if ((_ble_bash>=50200)); then
+  function ble/array#map-prefix {
+    local _ble_local_script='NAME=("${NAME[@]/#/"$2"}")' # disable=#D1570,#D1751,#D2352
+    if shopt -q compat42; then
+      shopt -u compat42
+      builtin eval -- "${_ble_local_script//NAME/$1}"
+      shopt -s compat42
+    else
+      builtin eval -- "${_ble_local_script//NAME/$1}"
+    fi
+  }
+  function ble/array#map-suffix {
+    local _ble_local_script='NAME=("${NAME[@]/%/"$2"}")' # disable=#D1570,#D1751,#D2352
+    if shopt -q compat42; then
+      shopt -u compat42
+      builtin eval -- "${_ble_local_script//NAME/$1}"
+      shopt -s compat42
+    else
+      builtin eval -- "${_ble_local_script//NAME/$1}"
+    fi
+  }
+elif ((_ble_bash<30100||40300<=_ble_bash&&_ble_bash<40400)); then
+  function ble/array#map-prefix {
+    local _ble_local_script='
+      NAME=("${NAME[@]}") # WA for #D1570
+      NAME=("${NAME[@]/#/$2}") # disable=#D1570,#D1738,#D2352'
+    builtin eval -- "${_ble_local_script//NAME/$1}"
+  }
+  function ble/array#map-suffix {
+    local _ble_local_script='
+      NAME=("${NAME[@]}") # WA for #D1570
+      NAME=("${NAME[@]/%/$2}") # disable=#D1570,#D1738,#D2352'
+    builtin eval -- "${_ble_local_script//NAME/$1}"
+  }
+elif ((40200<=_ble_bash&&_ble_bash<40300)); then
+  function ble/array#map-prefix {
+    local _ble_local_script='
+      if ((${#NAME[@]}==1)); then
+        NAME=("${NAME[@]}") # compaction
+        NAME[0]=$2${NAME[0]} # WA for #D2352
+      else
+        NAME=("${NAME[@]/#/$2}") # disable=#D1570,#D1738,#D2352
+      fi'
+    builtin eval -- "${_ble_local_script//NAME/$1}"
+  }
+  function ble/array#map-suffix {
+    local _ble_local_script='
+      if ((${#NAME[@]}==1)); then
+        NAME=("${NAME[@]}") # compaction
+        NAME[0]=${NAME[0]}$2 # WA for #D2352
+      else
+        NAME=("${NAME[@]/%/$2}") # disable=#D1570,#D1738,#D2352
+      fi'
+    builtin eval -- "${_ble_local_script//NAME/$1}"
+  }
+else
+  function ble/array#map-prefix {
+    local _ble_local_script='
+      NAME=("${NAME[@]/#/$2}") # disable=#D1570,#D1738,#D2352'
+    builtin eval -- "${_ble_local_script//NAME/$1}"
+  }
+  function ble/array#map-suffix {
+    local _ble_local_script='
+      NAME=("${NAME[@]/%/$2}") # disable=#D1570,#D1738,#D2352'
+    builtin eval -- "${_ble_local_script//NAME/$1}"
+  }
+fi
 function ble/array#fill-range {
-  ble/array#reserve-prototype "$(($3-$2))"
   local _ble_local_script='
-      local -a sNAME; sNAME=("${_ble_array_prototype[@]::$3-$2}")
-      NAME=("${NAME[@]::$2}" "${sNAME[@]/#/$4}" "${NAME[@]:$3}")' # WA #D1570 #D1738 checked
-  ((_ble_bash>=40300)) && ! shopt -q compat42 &&
-    _ble_local_script=${_ble_local_script//'$4'/'"$4"'}
+    local iNAME=$2
+    while ((iNAME<'"$(($3))"')); do NAME[iNAME++]=$4; done'
   builtin eval -- "${_ble_local_script//NAME/$1}"
 }
 function ble/idict#replace {
@@ -2454,13 +2628,13 @@ function ble/idict#replace {
   '; builtin eval -- "${_ble_local_script//NAME/$1}"
 }
 function ble/idict#copy {
-  local _ble_script='
+  local __ble_script='
     '$1'=()
-    local i'$1$2'
-    for i'$1$2' in "${!'$2'[@]}"; do
-      '$1'[i'$1$2']=${'$2'[i'$1$2']}
+    local __ble_i
+    for __ble_i in "${!'$2'[@]}"; do
+      '$1'[__ble_i]=${'$2'[__ble_i]}
     done'
-  builtin eval -- "$_ble_script"
+  builtin eval -- "$__ble_script"
 }
 _ble_string_prototype='        '
 function ble/string#reserve-prototype {
@@ -2746,33 +2920,26 @@ function ble/string#escape-for-bash-specialchars {
 function ble/string#escape-for-display {
   local head= tail=$1 opts=$2
   local sgr0= sgr1=
-  local rex_csi=$'\e\\[[ -?]*[@-~]'
+  local rex_csi=$'\e\\[[ -?]*[@-~]' # disable=#D1440 (LC_COLLATE=C is set)
   if [[ :$opts: == *:revert:* ]]; then
     ble/color/g2sgr "$_ble_color_gflags_Revert"
     sgr1=$ret sgr0=$_ble_term_sgr0
   else
-    if local rex=':sgr1=(('$rex_csi'|[^:])*):'; [[ :$opts: =~ $rex ]]; then
+    if ble/string#match-safe ":$opts:" ":sgr1=(($rex_csi|[^:])*):"; then
       sgr1=${BASH_REMATCH[1]} sgr0=$_ble_term_sgr0
     fi
-    if local rex=':sgr0=(('$rex_csi'|[^:])*):'; [[ :$opts: =~ $rex ]]; then
+    if ble/string#match-safe ":$opts:" ":sgr0=(($rex_csi|[^:])*):"; then
       sgr0=${BASH_REMATCH[1]}
     fi
   fi
   while [[ $tail ]]; do
     if ble/util/isprint+ "$tail"; then
-      head=$head${BASH_REMATCH}
+      head=$head$BASH_REMATCH
       tail=${tail:${#BASH_REMATCH}}
     else
-      ble/util/s2c "${tail::1}"
-      local code=$ret
-      if ((code<32)); then
-        ble/util/c2s "$((code+64))"
-        ret=$sgr1^$ret$sgr0
-      elif ((code==127)); then
-        ret=$sgr1^?$sgr0
-      elif ((128<=code&&code<160)); then
-        ble/util/c2s "$((code-64))"
-        ret=${sgr1}M-^$ret$sgr0
+      ble/util/s2c "${tail::1}"; local code=$ret
+      if ble/unicode/GraphemeCluster/ControlRepresentation "$ret"; then
+        ret=$sgr1$ret$sgr0
       else
         ret=${tail::1}
       fi
@@ -2795,9 +2962,14 @@ if ((_ble_bash>=40400)); then
 else
   function ble/string#quote-words {
     local q=\' Q="'\''" IFS=$_ble_term_IFS
-    ret=("${@//$q/$Q}")
-    ret=("${ret[@]/%/$q}") # WA #D1570 #D1738 checked
-    ret="${ret[*]/#/$q}"   # WA #D1570 #D1738 checked
+    if (($#==1)); then
+      ret=("${1//$q/$Q}")    # WA for #D2352
+      ret=("${ret[0]/%/$q}") # WA for #D2352 (disable=#D1738)
+    else
+      ret=("${@//$q/$Q}")    # disable=#D2352
+      ret=("${ret[@]/%/$q}") # disable=#D1570,#D1738,#D2352
+    fi
+    ret="${ret[*]/#/$q}"   # disable=#D1570,#D1738
   }
   function ble/string#quote-command {
     if (($#<=1)); then
@@ -2806,22 +2978,20 @@ else
     fi
     local q=\' Q="'\''" IFS=$_ble_term_IFS
     ret=("${@:2}")
-    ret=("${ret[@]//$q/$Q}")  # WA #D1570 #D1738 checked
-    ret=("${ret[@]/%/$q}")    # WA #D1570 #D1738 checked
-    ret="$1 ${ret[*]/#/$q}"   # WA #D1570 #D1738 checked
+    ret=("${ret[@]//$q/$Q}")  # disable=#D1570,#D1738,#D2352
+    ret=("${ret[@]/%/$q}")    # disable=#D1570,#D1738,#D2352
+    ret="$1 ${ret[*]/#/$q}"   # disable=#D1570,#D1738
   }
 fi
 function ble/string#quote-word {
   ret=${1-}
-  local rex_csi=$'\e\\[[ -?]*[@-~]'
   local opts=${2-} sgrq= sgr0=
   if [[ $opts ]]; then
-    local rex=':sgrq=(('$rex_csi'|[^:])*):'
-    if [[ :$opts: =~ $rex ]]; then
+    local rex_csi=$'\e\\[[ -?]*[@-~]' # disable=#D1440 (LC_COLLATE is set)
+    if ble/string#match-safe ":$opts:" ":sgrq=(($rex_csi|[^:])*):"; then
       sgrq=${BASH_REMATCH[1]} sgr0=$_ble_term_sgr0
     fi
-    rex=':sgr0=(('$rex_csi'|[^:])*):'
-    if [[ :$opts: =~ $rex ]]; then
+    if ble/string#match-safe ":$opts:" ":sgr0=(($rex_csi|[^:])*):"; then
       sgr0=${BASH_REMATCH[1]}
     elif [[ :$opts: == *:ansi:* ]]; then
       sgr0=$'\e[m'
@@ -2951,18 +3121,29 @@ function ble/path#remove {
   fi
   builtin eval -- "$_ble_local_script"
 }
-function ble/path#remove-glob {
-  [[ $2 ]] || return 1
-  local _ble_local_script='
-    opts=:${opts//:/::}:
-    opts=${opts//:$2:}
-    opts=${opts//::/:} opts=${opts#:} opts=${opts%:}'
-  _ble_local_script=${_ble_local_script//opts/"$1"}
+function ble/path#remove-glob/.impl {
+  local IFS=: nocasematch=
   if shopt -q nocasematch 2>/dev/null; then
     shopt -u nocasematch
-    _ble_local_script=$_ble_local_script';shopt -s nocasematch'
+    nocasematch=1
   fi
-  builtin eval -- "$_ble_local_script"
+  local str=$1 pat=$2 paths i
+  ble/string#split paths : "$str"
+  for i in "${!paths[@]}"; do
+    if [[ ${paths[i]} == $pat ]]; then
+      builtin unset -v 'paths[i]'
+    fi
+  done
+  ret="${paths[*]}"
+  if [[ $nocasematch ]]; then
+    shopt -s nocasematch
+  fi
+}
+function ble/path#remove-glob {
+  [[ $2 ]] || return 1
+  [[ $1 == ret ]] || local ret
+  IFS=: ble/path#remove-glob/.impl "${!1}" "$2"
+  [[ $1 == ret ]] || builtin eval -- "$1=\$ret"
 }
 function ble/path#contains {
   builtin eval "[[ :\${$1}: == *:\"\$2\":* ]]"
@@ -3100,8 +3281,13 @@ function ble/adict#keys {
   _ble_local_keylist=${!_ble_local_keylist%:}
   ble/string#split ret : "$_ble_local_keylist"
   if [[ $_ble_local_keylist == *"$_ble_term_FS"* ]]; then
-    ret=("${ret[@]//$_ble_term_FS./:}")             # WA #D1570 checked
-    ret=("${ret[@]//$_ble_term_FS,/$_ble_term_FS}") # WA #D1570 #D1738 checked
+    if ((40200<=_ble_bash&&_ble_bash<40300&&${#ret[@]}==1)); then
+      ret=("${ret[0]//$_ble_term_FS./:}")             # WA for #D2352
+      ret=("${ret[0]//$_ble_term_FS,/$_ble_term_FS}") # WA for #D2352 (disable=#D1738)
+    else
+      ret=("${ret[@]//$_ble_term_FS./:}")             # disable=#D1570,#D2352
+      ret=("${ret[@]//$_ble_term_FS,/$_ble_term_FS}") # disable=#D1570,#D1738,#D2352
+    fi
   fi
   local _ble_local_keys _ble_local_i _ble_local_ref=$1[_ble_local_i]
   _ble_local_keys=("${ret[@]}") ret=()
@@ -3117,7 +3303,18 @@ if ((_ble_bash>=40000)); then
   function ble/dict#unset { builtin eval -- "builtin unset -v '$1[x\$2]'"; }
   function ble/dict#has   { builtin eval -- "[[ \${$1[x\$2]+set} ]]"; }
   function ble/dict#clear { builtin eval -- "$1=()"; }
-  function ble/dict#keys  { builtin eval -- 'ret=("${!'"$1"'[@]}"); ret=("${ret[@]#x}")'; }
+  if ((40200<=_ble_bash&&_ble_bash<50200)); then
+    function ble/dict#keys {
+      builtin eval -- 'ret=("${!'"$1"'[@]}")'
+      if ((${#ret[@]}==1)); then
+        ret[0]=${ret[0]#x} # WA for #D2352
+      else
+        ret=("${ret[@]#x}") # disable=#D2352
+      fi
+    }
+  else
+    function ble/dict#keys { builtin eval -- 'ret=("${!'"$1"'[@]}"); ret=("${ret[@]#x}")'; } # disable=#D2352
+  fi
 else
   _ble_util_dict_declare='declare NAME NAME_keylist='
   function ble/dict#set   { ble/adict#set   "$@"; }
@@ -3342,7 +3539,7 @@ _ble_bin_awk_libES='
       } else if (match(s, /^[uU][0-9a-fA-F]([0-9a-fA-F]([0-9a-fA-F][0-9a-fA-F]?)?)?/)) {
         head = head c2s(s2i(substr(s, 2, RLENGTH - 1), 16));
         s = substr(s, RLENGTH + 1);
-      } else if (match(s, /^c[ -~]/)) {
+      } else if (match(s, /^c[ -~]/)) { # disable=#D1440 (caller is checked)
         c = es_s2c[substr(s, 2, 1)];
         head = head c2s(_ble_bash >= 40400 && c == 63 ? 127 : c % 32);
         s = substr(s, 3);
@@ -3444,7 +3641,7 @@ function ble/util/writearray {
   local __ble_rex_dq='^"([^\\"]|\\.)*"'
   local __ble_rex_es='^\$'\''([^\\'\'']|\\.)*'\'''
   local __ble_rex_sq='^'\''([^'\'']|'\'\\\\\'\'')*'\'''
-  local __ble_rex_normal=$'^[^'$_ble_term_space'$`"'\''()|&;<>\\]' # Note: []{}?*#!~^, @(), +() は quote されていなくても OK とする
+  local __ble_rex_normal=$'^[^'$_ble_term_blank'$`"'\''()|&;<>\\]' # Note: []{}?*#!~^, @(), +() は quote されていなくても OK とする
   declare -p "$_ble_local_array" | "$__ble_awk" -v _ble_bash="$_ble_bash" '
     '"$__ble_function_gensub_dummy"'
     BEGIN {
@@ -3485,13 +3682,13 @@ function ble/util/writearray {
       if (s ~ /^"/)
         return unquote_dq(substr(s, 2, length(s) - 2));
       else
-        return es_unescape(substr(s, 3, length(s) - 3));
+        return es_unescape(substr(s, 3, length(s) - 3)); # disable=#D1440 (\c? is unused)
     }
     function unquote(s) {
       if (s ~ /^"/)
         return unquote_dq(substr(s, 2, length(s) - 2));
       else if (s ~ /^\$/)
-        return es_unescape(substr(s, 3, length(s) - 3));
+        return es_unescape(substr(s, 3, length(s) - 3)); # disable=#D1440 (\c? is unused)
       else if (s ~ /^'\''/)
         return unquote_sq(substr(s, 2, length(s) - 2));
       else if (s ~ /^\\/)
@@ -3504,7 +3701,7 @@ function ble/util/writearray {
         if (IS_GAWK) {
           decl = gensub(/\[[0-9]+\]="(([^"\\]|\\.)*)" ?/, "\\1\001", "g", decl);
           sub(/\001$/, "", decl);
-          decl = gensub(/\\([\\$"`])/, "\\1", decl);
+          decl = gensub(/\\([\\$"`])/, "\\1", "g", decl);
         } else {
           gsub(/\[[0-9]+\]="([^"\\]|\\.)*" /, "&\001", decl);
           gsub(/" \001\[[0-9]+\]="/, "\001", decl);
@@ -3584,8 +3781,8 @@ function ble/util/writearray {
         gsub(/\001\001/, "\001", decl);
         gsub(/\001\177/, "\177", decl);
       }
-      sub(/^([_a-zA-Z][_a-zA-Z0-9]*)=\(['"$_ble_term_space"']*/, "", decl);
-      sub(/['"$_ble_term_space"']*\)['"$_ble_term_space"']*$/, "", decl);
+      sub(/^([_a-zA-Z][_a-zA-Z0-9]*)=\(['"$_ble_term_blank"']*/, "", decl);
+      sub(/['"$_ble_term_blank"']*\)['"$_ble_term_blank"']*$/, "", decl);
       if (decl == "") return 1;
       if (AWKTYPE != "mawk" && analyze_elements_dq(decl)) return 1;
       return analyze_elements_general(decl);
@@ -3607,7 +3804,7 @@ function ble/util/readarray {
   else
     local _ble_local_script='
       local IFS= NAMEI=0; NAME=()
-      while ble/bash/read -d "$_ble_local_delim" "NAME[NAMEI++]"; do :; done'
+      while ble/bash/read -d "$_ble_local_delim" "NAME[NAMEI++]"; do ((1)); done'
   fi
   if [[ $_ble_local_nlfix ]]; then
     _ble_local_script=$_ble_local_script'
@@ -3645,7 +3842,7 @@ function ble/util/assign/rmtmp {
 }
 if ((_ble_bash>=50300)); then
   function ble/util/assign {
-    builtin eval "$1=\${ builtin eval -- \"\$2\"; }"
+    builtin eval -- "$1=\${ builtin eval -- \"\$2\"; }"
   }
 elif ((_ble_bash>=40000)); then
   function ble/util/assign {
@@ -3654,7 +3851,8 @@ elif ((_ble_bash>=40000)); then
     local _ble_local_ret=$? _ble_local_arr=
     mapfile -t _ble_local_arr < "$_ble_local_tmpfile"
     ble/util/assign/rmtmp
-    IFS=$'\n' builtin eval "$1=\"\${_ble_local_arr[*]}\""
+    local IFS=$'\n' # avoid tmpenv to make it POSIXLY_CORRECT-safe
+    builtin eval -- "$1=\"\${_ble_local_arr[*]}\""
     return "$_ble_local_ret"
   }
 else
@@ -3664,7 +3862,7 @@ else
     local _ble_local_ret=$? IFS=
     ble/bash/read -d '' "$1" < "$_ble_local_tmpfile"
     ble/util/assign/rmtmp
-    builtin eval "$1=\${$1%\$_ble_term_nl}"
+    builtin eval -- "$1=\${$1%\$_ble_term_nl}"
     return "$_ble_local_ret"
   }
 fi
@@ -3702,7 +3900,7 @@ else
     builtin eval -- "$2" >| "$_ble_local_tmpfile"
     local _ble_local_ret=$?
     local IFS= i=0 _ble_local_arr
-    while ble/bash/read -d '' "_ble_local_arr[i++]"; do :; done < "$_ble_local_tmpfile"
+    while ble/bash/read -d '' "_ble_local_arr[i++]"; do ((1)); done < "$_ble_local_tmpfile"
     ble/util/assign/rmtmp
     [[ ${_ble_local_arr[--i]} ]] || builtin unset -v "_ble_local_arr[i]"
     ble/util/unlocal i IFS
@@ -3722,7 +3920,20 @@ function ble/util/assign-words {
   ble/util/assign "$1" "$2"
   ble/string#split-words "$1" "${!1}"
 }
-ble/bin/awk/.instantiate
+function ble/util/eval-stdout {
+  local _ble_local_script
+  ble/util/assign _ble_local_script "$1"
+  builtin eval -- "$_ble_local_script"
+}
+if ((_ble_bash>=50300)); then
+  function ble/util/compgen { builtin compgen -V "$@"; }
+else
+  function ble/util/compgen {
+    local _ble_local_args
+    _ble_local_compgen_args=("${@:2}")
+    ble/util/assign-array "$1" 'builtin compgen "${_ble_local_compgen_args[@]}"'
+  }
+fi
 if ((_ble_bash>=30200)); then
   function ble/is-function {
     declare -F -- "$1" &>/dev/null
@@ -3734,6 +3945,7 @@ else
     [[ $type == function ]]
   }
 fi
+ble/bin/awk/.instantiate
 if ((_ble_bash>=30200)); then
   function ble/function#getdef {
     local name=$1
@@ -3847,27 +4059,34 @@ function ble/function#advice/.proc {
 }
 ble/function#trace ble/function#advice/.proc
 function ble/function#advice {
+  local flags=
+  while [[ ${1-} == -[!-]* ]]; do
+    flags=$flags${1#-}
+    shift
+  done
   local type=$1 name=$2 proc=$3
   if ! ble/is-function "$name"; then
     local t=; ble/util/type t "$name"
     case $t in
     (builtin|file) builtin eval "function $name { : ZBe85Oe28nBdg; command $name \"\$@\"; }" ;;
     (*)
-      ble/util/print "ble/function#advice: $name is not a function." >&2
-      return 1 ;;
+      if [[ $flags == *f* ]]; then
+        ble/util/print "ble/function#advice: $name is not a function." >&2
+        return 1
+      fi ;;
     esac
   fi
   local def; ble/function#getdef "$name"
   case $type in
   (remove)
     if [[ $def == *'ble/function#advice/.proc'* ]]; then
-      ble/function#getdef "ble/function#advice/original:$name"
+      ble/function#getdef ble/function#advice/original:"$name"
       if [[ $def ]]; then
         if [[ $def == *ZBe85Oe28nBdg* ]]; then
           builtin unset -f "$name"
         else
           ble/function#evaldef "${def#*:}"
-          ble/function#copy-trace "ble/function#advice/original:$name" "$name"
+          ble/function#copy-trace ble/function#advice/original:"$name" "$name"
         fi
       fi
     fi
@@ -3875,14 +4094,14 @@ function ble/function#advice {
     return 0 ;;
   (before|after|around)
     if [[ $def != *'ble/function#advice/.proc'* ]]; then
-      ble/function#evaldef "ble/function#advice/original:$def"
-      ble/function#copy-trace "$name" "ble/function#advice/original:$name"
+      ble/function#evaldef ble/function#advice/original:"$def"
+      ble/function#copy-trace "$name" ble/function#advice/original:"$name"
       builtin eval "function $name { ble/function#advice/.proc \"\$FUNCNAME\" \"\$@\"; }"
-      ble/function#copy-trace "ble/function#advice/original:$name" "$name"
+      ble/function#copy-trace ble/function#advice/original:"$name" "$name"
     fi
     local q=\' Q="'\''"
     builtin eval "ble/function#advice/$type:$name() { builtin eval -- '${proc//$q/$Q}'; }"
-    ble/function#copy-trace "ble/function#advice/original:$name" "ble/function#advice/$type:$name"
+    ble/function#copy-trace ble/function#advice/original:"$name" ble/function#advice/$type:"$name"
     return 0 ;;
   (*)
     ble/util/print "ble/function#advice unknown advice type '$type'" >&2
@@ -4067,22 +4286,34 @@ fi
 function ble/util/load-standard-builtin {
   local ret; ble/util/readlink "$BASH"
   local bash_prefix=${ret%/*/*}
-  if [[ -s $bash_prefix/lib/bash/$1 ]] && (
-       enable -f "$bash_prefix/lib/bash/$1" "$1" &&
-         help "$1" &&
-         { [[ ! $2 ]] || builtin eval -- "$2"; }
-     ) &>/dev/null
-  then
-    enable -f "$bash_prefix/lib/bash/$1" "$1"
-    return 0
-  else
-    return 1
-  fi
+  local -a loadable_paths=()
+  ((_ble_bash>=40400)) && [[ ${BASH_LOADABLE_PATHS-} ]] &&
+    ble/string#split loadable_paths : "$BASH_LOADABLES_PATH"
+  ble/array#push loadable_paths "$bash_prefix"/lib{,64}/bash
+  [[ ! $bash_prefix ]] &&
+    ble/array#push loadable_paths /usr/lib{,64}/bash
+  local loadable_path
+  for loadable_path in "${loadable_paths[@]}"; do
+    if [[ -s $loadable_path/$1 ]] && (
+         enable -f "$loadable_path/$1" "$1" &&
+           help "$1" &&
+           { [[ ! $2 ]] || builtin eval -- "$2"; }
+       ) &>/dev/null
+    then
+      enable -f "$loadable_path/$1" "$1"
+      return 0
+    fi
+  done
+  return 1
 }
 if ((_ble_bash>=40000)); then
   function ble/util/is-stdin-ready {
-    local IFS= LC_ALL= LC_CTYPE=C
-    builtin read -t 0 <&"${1:-${_ble_util_fd_tui_stdin:-0}}"
+    local IFS= LC_ALL= LC_CTYPE=C stdin=${1:-${_ble_util_fd_tui_stdin:-0}}
+    if ((stdin==0)) || { ((stdin==_ble_util_fd_tui_stdin)) && [[ -t 0 && ! $_ble_edit_exec_inside_userspace ]]; }; then
+      builtin read -t 0
+    else
+      builtin read -t 0 <&"$stdin"
+    fi
   }
   ble/function#suppress-stderr ble/util/is-stdin-ready
 else
@@ -4249,39 +4480,49 @@ function ble/fd#alloc/.exec {
 }
 ble/fd#is-open/.upgrade
 if [[ -d /proc/$$/fd ]]; then
-  function ble/fd#list/adjust-glob {
-    set=$- shopt= gignore=$GLOBIGNORE
-    ble/base/list-shopt failglob dotglob
-    shopt -u failglob
-    set +f
-    GLOBIGNORE=
-  }
-  function ble/fd#list/restore-glob {
-    GLOBIGNORE=$gignore
-    if [[ :$shopt: == *:dotglob:* ]]; then shopt -s dotglob; else shopt -u dotglob; fi
-    [[ $set == *f* ]] && set -f
-    [[ :$shopt: == *:failglob:* ]] && shopt -s failglob
-  }
-  function ble/fd#list {
-    ret=()
-    local set shopt gignore
-    ble/fd#list/adjust-glob
-    local pid=${1-}
-    if [[ ! $pid ]]; then
-      if ((_ble_bash<40000)); then
-        local BASHPID
-        ble/util/getpid
-      fi
-      pid=$BASHPID
-    fi
-    local fd
-    for fd in /proc/"$pid"/fd/[0-9]*; do
-      fd=${fd##*/}
-      [[ $fd && ! ${fd//[0-9]} ]] &&
-        ble/array#push ret "$fd"
-    done
-    ble/fd#list/restore-glob
-  }
+  if ((_ble_bash>=50300)); then
+    function ble/fd#list/.impl {
+      local pid=$1
+      builtin compgen -V ret -G "/proc/$pid/fd/[0-9]*"
+      ret=("${ret[@]##*/}") # disable=#D2352 (bash >= 5.3 are unaffected)
+    }
+  else
+    function ble/fd#list/.adjust-glob {
+      set=$- shopt= gignore=$GLOBIGNORE
+      ble/base/list-shopt failglob dotglob
+      shopt -u failglob
+      set +f
+      GLOBIGNORE=
+    }
+    function ble/fd#list/.restore-glob {
+      GLOBIGNORE=$gignore
+      if [[ :$shopt: == *:dotglob:* ]]; then shopt -s dotglob; else shopt -u dotglob; fi
+      [[ $set == *f* ]] && set -f
+      [[ :$shopt: == *:failglob:* ]] && shopt -s failglob
+    }
+    function ble/fd#list/.impl {
+      ret=()
+      local pid=$1
+      local set shopt gignore
+      ble/fd#list/.adjust-glob
+      local fd
+      for fd in /proc/"$pid"/fd/[0-9]*; do
+        fd=${fd##*/}
+        [[ $fd && ! ${fd//[0-9]} ]] &&
+          ble/array#push ret "$fd"
+      done
+      ble/fd#list/.restore-glob
+    }
+  fi
+  if ((_ble_bash>=40000)); then
+    function ble/fd#list { ble/fd#list/.impl "$BASHPID"; }
+  else
+    function ble/fd#list {
+      local BASHPID
+      ble/util/getpid
+      ble/fd#list/.impl "$BASHPID"
+    }
+  fi
 else
   function ble/fd#list {
     ret=()
@@ -4297,10 +4538,10 @@ if ((_ble_bash>=40400)) && ble/util/load-standard-builtin fdflags 'builtin fdfla
 elif ((_ble_bash>=40000)); then
   if [[ -d /proc/$$/fd ]]; then
     function ble/fd#cloexec/.listfd {
-      local fd
-      for fd in /proc/"$$"/fd/*; do
-        fd=${fd##*/}
-        [[ $fd && ! ${fd//[0-9]} ]] && ble/util/set "$1[fd]" 1
+      local ret fd
+      ble/fd#list/.impl "$$"
+      for fd in "${ret[@]}"; do
+        ble/util/set "$1[fd]" 1
       done
     }
     function ble/fd#cloexec/.probe {
@@ -4317,14 +4558,9 @@ elif ((_ble_bash>=40000)); then
       return 1
     }
     function ble/fd#cloexec/.dup-undo-redirection-fd {
-      local set shopt gignore
-      ble/fd#list/adjust-glob
       local fd=$1 fdset1
       ble/fd#cloexec/.listfd fdset1
       builtin eval -- "ble/fd#cloexec/.probe $fd</dev/null"
-      local ext=$?
-      ble/fd#list/restore-glob
-      return "$ext"
     }
   else
     function ble/fd#cloexec/.probe {
@@ -4368,8 +4604,8 @@ elif ((_ble_bash>=40000)); then
     fi
   }
 else
-  function ble/fd#cloexec/.add { false; }
-  function ble/fd#cloexec/.remove { false; }
+  function ble/fd#cloexec/.add { return 1; }
+  function ble/fd#cloexec/.remove { return 1; }
 fi
 function ble/fd#add-cloexec {
   ble/fd#cloexec/.add "$1" && return 0
@@ -4544,18 +4780,18 @@ function ble/util/declare-print-definitions {
       if (match(decl, /^[_a-zA-Z][_a-zA-Z0-9]*=\(/) == 0) return 0;
       name = substr(decl, 1, RLENGTH - 2);
       decl = substr(decl, RLENGTH + 1, length(decl) - RLENGTH - 1);
-      sub(/^['"$_ble_term_space"']+/, decl);
+      sub(/^['"$_ble_term_blank"']+/, decl);
       out = name "=()\n";
       while (match(decl, /^\[[0-9]+\]=/)) {
         key = substr(decl, 2, RLENGTH - 3);
         decl = substr(decl, RLENGTH + 1);
         value = "";
-        if (match(decl, /^('\''[^'\'']*'\''|\$'\''([^\\'\'']|\\.)*'\''|\$?"([^\\"]|\\.)*"|\\.|[^'"$_ble_term_space"'"'\''`;&|()])*/)) {
+        if (match(decl, /^('\''[^'\'']*'\''|\$'\''([^\\'\'']|\\.)*'\''|\$?"([^\\"]|\\.)*"|\\.|[^'"$_ble_term_blank"'"'\''`;&|()])*/)) {
           value = substr(decl, 1, RLENGTH)
           decl = substr(decl, RLENGTH + 1)
         }
         out = out name "[" key "]=" fix_value(value) "\n";
-        sub(/^['"$_ble_term_space"']+/, decl);
+        sub(/^['"$_ble_term_blank"']+/, decl);
       }
       if (decl != "") return 0;
       print out;
@@ -4719,7 +4955,7 @@ function ble/util/eval-pathname-expansion {
   fi
   return "$ext"
 }
-_ble_util_rex_isprint='^[ -~]+'
+_ble_util_rex_isprint='^[ -~]+' # disable=#D1440 (LC_COLLATE is set)
 function ble/util/isprint+ {
   local LC_ALL= LC_COLLATE=C
   [[ $1 =~ $_ble_util_rex_isprint ]]
@@ -4768,7 +5004,7 @@ else
       local fmt=$3 time=$4
       ble/util/assign "$2" "ble/bin/date +\"\$fmt\" $time"
     else
-      ble/bin/date +"$1" $2
+      ble/bin/date +"$1" ${2+"$2"}
     fi
   }
 fi
@@ -4947,11 +5183,7 @@ function blehook/.read-arguments {
         flags=E$flags
         continue
       fi
-      if ((_ble_bash>=40300)) && ! shopt -q compat42; then
-        ret=("${ret[@]/%/"$type$value"}") # WA #D1570 #D1751 checked
-      else
-        ret=("${ret[@]/%/$type$value}") # WA #D1570 #D1738 checked
-      fi
+      ble/array#map-suffix ret "$type$value"
     else
       ret=("_ble_hook_h_$pat")
     fi
@@ -5428,6 +5660,7 @@ _ble_builtin_trap_user_lastexit=
 function ble/builtin/trap/invoke.sandbox {
   local _ble_trap_count
   for ((_ble_trap_count=0;_ble_trap_count<1;_ble_trap_count++)); do
+    local BASH_TRAPSIG=$_ble_trap_sig
     _ble_trap_done=return
     ble/util/setexit "$_ble_trap_lastexit" "$_ble_trap_lastarg"
     builtin eval -- "$_ble_trap_handler"$'\n_ble_trap_lastexit=$? _ble_trap_lastarg=$_' 2>&3
@@ -5552,7 +5785,7 @@ function ble/builtin/trap/.handler {
     if [[ :$install_opts: == *:user-trap-in-postproc:* ]]; then
       local q=\' Q="'\''" _ble_trap_handler postproc=
       ble/builtin/trap/user-handler#load "$_ble_trap_sig"
-      if [[ $_ble_trap_handler == *[![:space:]]* ]]; then
+      if [[ $_ble_trap_handler == *[!$_ble_term_IFS]* ]]; then
         postproc="ble/util/setexit $_ble_trap_lastexit '${_ble_trap_lastarg//$q/$Q}'"
         postproc=$postproc";LINENO=$BLE_TRAP_LINENO builtin eval -- '${_ble_trap_handler//$q/$Q}'"
       else
@@ -5594,7 +5827,7 @@ function ble/builtin/trap/install-hook {
   if [[ $trap_string == "trap -- '"* ]] && ! ble/builtin/trap/user-handler/is-internal "${trap_string#*$q}"; then
     ((sig<1000)) &&
       ! ble/builtin/trap/user-handler#has "$sig" &&
-      builtin eval -- "ble/builtin/$trap_string"
+      builtin eval -- ble/builtin/"$trap_string"
   fi
   return "$ext"
 }
@@ -6166,7 +6399,7 @@ if ((_ble_bash>=40400)) && ble/util/load-standard-builtin sleep; then
     builtin eval -- "$_ble_bash_POSIXLY_CORRECT_local_return"
   }
 elif [[ -f $_ble_base/lib/init-msleep.sh ]] &&
-       source "$_ble_base/lib/init-msleep.sh" &&
+       source -- "$_ble_base/lib/init-msleep.sh" &&
        ble/util/msleep/.load-compiled-builtin
 then
   function ble/util/msleep { ble/builtin/msleep "$1"; }
@@ -6238,11 +6471,10 @@ function ble/util/conditional-sync {
   local __ble_continue=${2:-'! ble/decode/has-input'}
   local __ble_weight=$3; ((__ble_weight<=0&&(__ble_weight=100)))
   local __ble_opts=$4
-  local __ble_timeout= __ble_rex=':timeout=([^:]+):'
-  [[ :$__ble_opts: =~ $__ble_rex ]] && ((__ble_timeout=BASH_REMATCH[1]))
+  local __ble_timeout= ret
+  ble/opts#extract-last-optarg "$__ble_opts" timeout && ((__ble_timeout=ret))
   [[ :$__ble_opts: == *:progressive-weight:* ]] &&
     local __ble_weight_max=$__ble_weight __ble_weight=1
-  local ret
   ble/opts#extract-last-optarg "$__ble_opts" pid
   local __ble_pid=$ret
   ble/util/unlocal ret
@@ -6966,7 +7198,7 @@ function ble/util/import {
     local guard=ble/util/import/guard:$enc
     ble/is-function "$guard" && return 0
     [[ -e $file ]] || return 1
-    source "$file" || { ext=$?; continue; }
+    source -- "$file" || { ext=$?; continue; }
     builtin eval "function $guard { return 0; }"
     ble/array#push _ble_util_import_files "$file"
     local onload=ble/util/import/onload:$enc
@@ -7125,7 +7357,6 @@ function ble-stackdump {
 function ble/util/assert {
   local expr=$1 message=$2
   if ! builtin eval -- "$expr"; then
-    shift
     local _ble_util_stackdump_title='assertion failure'
     local _ble_util_stackdump_start=3
     ble/util/stackdump "$expr$_ble_term_nl$message" >&2
@@ -7133,6 +7364,13 @@ function ble/util/assert {
   else
     return 0
   fi
+}
+function ble/util/assert-fail {
+  local message=$1
+  local _ble_util_stackdump_title='assertion failure'
+  local _ble_util_stackdump_start=3
+  ble/util/stackdump "$message" >&2
+  return 1
 }
 function ble/util/assert/.read-arguments {
   ext=0
@@ -7307,7 +7545,7 @@ if ((_ble_bash>=40000)); then
     local _ble_idle_processed=
     local _ble_idle_info_shown=
     local _ble_idle_after_task=0
-    while :; do
+    while ((1)); do
       local _ble_idle_key
       local _ble_idle_next_time= _ble_idle_next_itime= _ble_idle_running= _ble_idle_waiting=
       for _ble_idle_key in "${!_ble_util_idle_task[@]}"; do
@@ -7546,23 +7784,24 @@ if ((_ble_bash>=40000)); then
     [[ ${ble_util_idle_status+set} ]] || return 2
     ble_util_idle_status=R
   }
-  function ble/util/idle/.delare-external-modifier {
+  function ble/util/idle/.declare-external-modifier {
     local name=$1
-    builtin eval -- 'function ble/util/idle#'$name' {
+    builtin eval -- 'function ble/util/idle#'"$name"' {
       local index=$1
       [[ ${_ble_util_idle_task[index]+set} ]] || return 2
       local ble_util_idle_status=${_ble_util_idle_task[index]%%"$_ble_util_idle_SEP"*}
       local ble_util_idle_command=${_ble_util_idle_task[index]#*"$_ble_util_idle_SEP"}
-      ble/util/idle.'$name' "${@:2}"
+      ble/util/idle.clock/.initialize
+      ble/util/idle.'"$name"' "${@:2}"
       _ble_util_idle_task[index]=$ble_util_idle_status$_ble_util_idle_SEP$ble_util_idle_command
     }'
   }
-  ble/util/idle/.delare-external-modifier suspend
-  ble/util/idle/.delare-external-modifier sleep
-  ble/util/idle/.delare-external-modifier isleep
+  ble/util/idle/.declare-external-modifier suspend
+  ble/util/idle/.declare-external-modifier sleep
+  ble/util/idle/.declare-external-modifier isleep
   ble/util/idle.push-background 'ble/util/msleep/calibrate'
 else
-  function ble/util/idle.do { false; }
+  function ble/util/idle.do { return 1; }
 fi
 _ble_util_fiberchain=()
 _ble_util_fiberchain_prefix=
@@ -7631,9 +7870,9 @@ function ble/term/DA2R.hook {
 }
 function ble/term/.initialize {
   if [[ -s $_ble_base_cache/term.$TERM && $_ble_base_cache/term.$TERM -nt $_ble_base/lib/init-term.sh ]]; then
-    source "$_ble_base_cache/term.$TERM"
+    source -- "$_ble_base_cache/term.$TERM"
   else
-    source "$_ble_base/lib/init-term.sh"
+    source -- "$_ble_base/lib/init-term.sh"
   fi
   ble/string#reserve-prototype "$_ble_term_it"
   blehook term_DA2R!=ble/term/DA2R.hook
@@ -7888,8 +8127,8 @@ function ble/term/stty/initialize {
   _ble_term_stty_state=1
 }
 function ble/term/stty/leave {
-  [[ ! $_ble_term_stty_state ]] && return 0
-  _ble_term_stty_state=
+  ((_ble_term_stty_state)) || return 0
+  _ble_term_stty_state=0
   if [[ $bleopt_term_stty_restore && $_ble_term_stty_save ]]; then
     ble/bin/stty "$_ble_term_stty_save"
   else
@@ -7897,7 +8136,7 @@ function ble/term/stty/leave {
   fi
 }
 function ble/term/stty/enter {
-  [[ $_ble_term_stty_state ]] && return 0
+  ((_ble_term_stty_state)) && return 0
   if [[ $bleopt_term_stty_restore ]]; then
     ble/term/stty/initialize
   else
@@ -7910,11 +8149,15 @@ function ble/term/stty/finalize {
   _ble_term_stty_save=
 }
 function ble/term/stty/TRAPEXIT {
+  if [[ ! $_ble_term_stty_state ]]; then
+    return 0
+  fi
   if [[ $bleopt_term_stty_restore && $_ble_term_stty_save ]]; then
     ble/bin/stty "$_ble_term_stty_save"
   else
     ble/bin/stty echo -nl "${_ble_term_stty_flags_leave[@]}"
   fi
+  _ble_term_stty_state=0
 }
 function ble/term/update-winsize {
   if ((_ble_bash<50200||50300<=_ble_bash)); then
@@ -8003,7 +8246,7 @@ if ((50200<=_ble_bash&&_ble_bash<50300)); then
     then
       LINES=${ret[0]} COLUMNS=${ret[1]}
       function ble/term/stty/enter {
-        [[ $_ble_term_stty_state ]] && return 0
+        ((_ble_term_stty_state)) && return 0
         local ret
         if [[ $bleopt_term_stty_restore ]]; then
           ble/term/stty/initialize
@@ -8123,7 +8366,7 @@ function ble/term/DA2/request {
   (st|st-*)
     _ble_term_TERM=st:- ;;
   (*)
-    ble/util/buffer $'\e[>c' # DA2 要求 (ble-decode-char/csi/.decode で受信)
+    ble/util/buffer $'\e[>c' # DA2 要求 (ble/decode/csi/.decode で受信)
   esac
 }
 function ble/term/DA2/initialize-term {
@@ -8145,7 +8388,8 @@ function ble/term/DA2/initialize-term {
   ('1;277;0')  _ble_term_TERM[depth]=mlterm:30402 ;; # Note: wezterm:20220408 と同じ。wezterm の方を優先
   ('24;279;0') _ble_term_TERM[depth]=mlterm:30702 ;;
   ('0;95;0')    _ble_term_TERM[depth]=iTerm2:${LC_TERMINAL_VERSION-2.9+} ;;
-  ('41;2500;0') _ble_term_TERM[depth]=iTerm2:${LC_TERMINAL_VERSION-3.5+} ;;
+  ('41;2500;0') _ble_term_TERM[depth]=iTerm2:${LC_TERMINAL_VERSION-3.5.0+} ;;
+  ('64;2500;0') _ble_term_TERM[depth]=iTerm2:${LC_TERMINAL_VERSION-3.5.6+} ;;
   ('0;10;1') # Windows Terminal
     _ble_term_TERM[depth]=wt:0 ;;
   ('0;'*';1')
@@ -8159,15 +8403,19 @@ function ble/term/DA2/initialize-term {
   ('1;'*)
     if ((4000<=da2r_vec[1]&&da2r_vec[1]<=4009&&3<=da2r_vec[2])); then
       _ble_term_TERM[depth]=kitty:$((da2r_vec[1]-4000))
-    elif ((2000<=da2r_vec[1]&&da2r_vec[1]<5400&&da2r_vec[2]==0)); then
+    elif ((803<=da2r_vec[1]&&da2r_vec[1]<5400&&da2r_vec[2]==0)); then
       local version=$((da2r_vec[1]))
       _ble_term_TERM[depth]=vte:$version
       if ((version<4000)); then
         _ble_term_Ss=
       fi
     fi ;;
+  ('61;'*)
+    if ((7501<=da2r_vec[1]&&da2r_vec[2]==1)); then
+      _ble_term_TERM[depth]=vte:$((da2r_vec[1]))
+    fi ;;
   ('65;'*)
-    if ((5300<=da2r_vec[1]&&da2r_vec[2]==1)); then
+    if ((5300<=da2r_vec[1]&&da2r_vec[1]<=7501&&da2r_vec[2]==1)); then
       _ble_term_TERM[depth]=vte:$((da2r_vec[1]))
     elif ((da2r_vec[1]>=100)); then
       _ble_term_TERM[depth]=RLogin:$((da2r_vec[1]))
@@ -8191,7 +8439,7 @@ function ble/term/DA2/initialize-term {
   if rex='^xterm(-|$)'; [[ $TERM =~ $rex ]]; then
     local version=$((da2r_vec[1]))
     if rex='^1;[0-9]+;0$'; [[ $da2r =~ $rex ]]; then
-      true
+      builtin true
     elif rex='^0;[0-9]+;0$'; [[ $da2r =~ $rex ]]; then
       ((95<=version))
     elif rex='^(2|24|1[89]|41|6[145]);[0-9]+;0$'; [[ $da2r =~ $rex ]]; then
@@ -8199,7 +8447,7 @@ function ble/term/DA2/initialize-term {
     elif rex='^32;[0-9]+;0$'; [[ $da2r =~ $rex ]]; then
       ((354<=version&&version<2000))
     else
-      false
+      builtin false
     fi && { _ble_term_TERM[depth]=xterm:$version; return 0; }
   fi
   _ble_term_TERM[depth]=unknown:-
@@ -8574,14 +8822,14 @@ else
       return 0
     fi
     local bytes byte
-    ble/util/assign bytes '
+    ble/util/assign-words bytes '
       local IFS=
       while ble/bash/read -n 1 byte; do
         builtin printf "%d " "'\''$byte"
       done <<< "$s"
       IFS=$_ble_term_IFS
     '
-    "ble/encoding:$bleopt_input_encoding/b2c" $bytes
+    ble/encoding:"$bleopt_input_encoding"/b2c "${bytes[@]}"
   }
 fi
 if ((_ble_bash>=40200)); then
@@ -8683,18 +8931,24 @@ function ble/util/chars2s {
   ble/util/chars2s.impl "$@"
 }
 function ble/util/c2bc {
-  "ble/encoding:$bleopt_input_encoding/c2bc" "$1"
+  ble/encoding:"$bleopt_input_encoding"/c2bc "$1"
 }
 _ble_util_locale_triple=
 _ble_util_locale_ctype=
 _ble_util_locale_encoding=UTF-8
 _ble_util_locale_broken=
+function ble/util/.test-C-locale {
+  local LC_ALL= LC_CTYPE= LANG=C
+  local s='あ'
+  ((${#s}==3)); local ext=$?
+  ble/util/unlocal LC_ALL LC_CTYPE LANG
+  return "$ext"
+} 2>/dev/null # suppress locale error #D1440
 function ble/util/.test-utf8-locale {
   local LC_ALL= LC_CTYPE= LANG=C
-  local s='あ' ext=0
-  ((${#s}==3)) || ext=1
+  local s='あ'
   LANG=$ctype
-  ((${#s}==1)) || ext=1
+  ((${#s}==1)); local ext=$?
   ble/util/unlocal LC_ALL LC_CTYPE LANG
   return "$ext"
 } 2>/dev/null # suppress locale error #D1440
@@ -8709,13 +8963,14 @@ function ble/util/.update-locale-cache {
       _ble_util_s2c_table=()
     _ble_util_locale_encoding=C
     _ble_util_locale_broken=
+    ble/util/.test-C-locale || _ble_util_locale_broken=C
     if local rex='\.([^@]+)'; [[ $_ble_util_locale_ctype =~ $rex ]]; then
       local enc=${BASH_REMATCH[1]}
       if [[ $enc == utf-8 || $enc == utf8 ]]; then
         enc=UTF-8
       fi
       if [[ $enc == UTF-8 ]] && ! ble/util/.test-utf8-locale "$ctype"; then
-        _ble_util_locale_broken=1
+        _ble_util_locale_broken=${_ble_util_locale_broken:+$_ble_util_locale_broken$_ble_term_FS}$ctype
         if ble/base/is-wsl; then
           ble/function#advice around ble/util/c2s.impl '
             local char=${ADVICE_WORDS[1]}
@@ -8743,7 +8998,7 @@ function ble/util/.update-locale-cache {
             fi
           '
         fi
-      elif ble/is-function "ble/encoding:$enc/b2c"; then
+      elif ble/is-function ble/encoding:"$enc"/b2c; then
         _ble_util_locale_encoding=$enc
       fi
     fi
@@ -8754,10 +9009,17 @@ function ble/util/notify-broken-locale {
   [[ $_ble_util_locale_triple != "$LC_ALL:$LC_CTYPE:$LANG" ]] &&
     ble/util/.update-locale-cache
   [[ $_ble_util_locale_broken ]] || return 0
-  local lc_ctype=${LC_ALL:-${LC_CTYPE:-$LANG}}
-  ble/gdict#has _ble_util_locale_broken_notified "$lc_ctype" && return 0
-  ble/gdict#set _ble_util_locale_broken_notified "$lc_ctype" 1
-  ble/util/print "ble.sh: The locale '$lc_ctype' (LC_CTYPE) seems broken. Please check that the locale exists in the system." >&2
+  local broken broken_locales
+  ble/string#split broken_locales "$_ble_term_FS" "$_ble_util_locale_broken"
+  for broken in "${broken_locales[@]}"; do
+    [[ $broken ]] || continue
+    ble/gdict#has _ble_util_locale_broken_notified "$broken" && continue
+    ble/gdict#set _ble_util_locale_broken_notified "$broken" 1
+    ble/util/print "ble.sh: The locale '$broken' (LC_CTYPE) seems broken. Please check that the locale exists in the system." >&2
+    if [[ $broken == C && $OSTYPE == linux-android && $HOME == */com.termux/* ]]; then
+      ble/util/print 'ble.sh: Termux has an issue with its locale "C", and the fix is discussed at https://github.com/termux/termux-packages/discussions/23010' >&2
+    fi
+  done
 }
 function ble/util/is-unicode-output {
   [[ $_ble_util_locale_triple != "$LC_ALL:$LC_CTYPE:$LANG" ]] &&
@@ -9141,6 +9403,8 @@ bleopt/declare -v debug_xtrace_ps4 '+ '
 ble/bin#freeze-utility-path "${_ble_init_posix_command_list[@]}" # <- this uses ble/util/assign.
 ble/bin#freeze-utility-path man
 ble/bin#freeze-utility-path groff nroff mandoc gzip bzcat lzcat xzcat # used by core-complete.sh
+ble/bin/sed/.instantiate
+ble/bin/stty/.instantiate
 ble/function#trace trap ble/builtin/trap ble/builtin/trap/finalize
 ble/function#trace ble/builtin/trap/.handler ble/builtin/trap/invoke ble/builtin/trap/invoke.sandbox
 ble/builtin/trap/install-hook EXIT
@@ -9158,6 +9422,7 @@ function ble/base/initialize-session {
 }
 ble/base/initialize-session
 function ble/base/check-bash-debug-version {
+  [[ -t 2 ]] || return 0
   case ${BASH_VERSINFO[4]} in
   (alp*|bet*|dev*|rc*|releng*|maint*) ;;
   (*) return 0 ;;
@@ -9165,13 +9430,15 @@ function ble/base/check-bash-debug-version {
   local type=check ret
   ble/opts#extract-last-optarg "$_ble_base_arguments_opts" bash-debug-version check && type=$ret
   [[ $type == ignore ]] && return 0
-  local file=$_ble_base_cache/base.bash-debug-version-checked.txt
-  local -a checked=()
-  [[ ! -d $file && -r $file && -s $file ]] && ble/util/mapfile checked < "$file"
-  if ble/array#index checked "$BASH_VERSION"; then
-    [[ $type == once ]] && return 0
-  else
-    ble/util/print "$BASH_VERSION" >> "$file"
+  if [[ $type == once ]]; then
+    local file=$_ble_base_cache/base.bash-debug-version-checked.txt
+    local -a checked=()
+    [[ ! -d $file && -r $file && -s $file ]] && ble/util/mapfile checked < "$file"
+    if ble/array#index checked "$BASH_VERSION"; then
+      return 0
+    else
+      ble/util/print "$BASH_VERSION" >> "$file"
+    fi
   fi
   local sgr0=$_ble_term_sgr0
   local sgr1=${_ble_term_setaf[4]}
@@ -9181,7 +9448,7 @@ function ble/base/check-bash-debug-version {
   local bold=$_ble_term_bold
   if [[ $type == short || $_ble_init_command ]]; then
     ble/util/print-lines \
-      "Note: ble.sh can be very slow in a debug version of Bash: $sgr3$BASH_VERSION$sgr0"
+      "Note: ble.sh can be very slow in a debug version of Bash: $sgr3$BASH_VERSION$sgr0" >&2
   else
     ble/util/print-lines \
       "$bold# ble.sh with debug version of Bash$sgr0" \
@@ -9198,14 +9465,14 @@ function ble/base/check-bash-debug-version {
       "\`$sgr2--bash-debug-version=short$sgr0' or \`${sgr2}once$sgr0' or \`${sgr2}ignore$sgr0' to \`ble.sh':" \
       '' \
       "  ${sgrC}# Show a short version of the message$sgr0" \
-      "  ${sgr1}source /path/to/ble.sh $bold--bash-debug-version=short$sgr0" \
+      "  ${sgr1}source -- /path/to/ble.sh $bold--bash-debug-version=short$sgr0" \
       '' \
       "  ${sgrC}# Do not print the warning message more than once$sgr0" \
-      "  ${sgr1}source /path/to/ble.sh $bold--bash-debug-version=once$sgr0" \
+      "  ${sgr1}source -- /path/to/ble.sh $bold--bash-debug-version=once$sgr0" \
       '' \
       "  ${sgrC}# Show the warning message only once for each debug version of Bash$sgr0" \
-      "  ${sgr1}source /path/to/ble.sh $bold--bash-debug-version=ignore$sgr0" \
-      ''
+      "  ${sgr1}source -- /path/to/ble.sh $bold--bash-debug-version=ignore$sgr0" \
+      '' >&2
   fi
 }
 ble/base/check-bash-debug-version
@@ -9279,8 +9546,10 @@ _ble_decode_Erro=0x40000000
 _ble_decode_Macr=0x20000000
 _ble_decode_Flag3=0x10000000 # unused
 _ble_decode_FlagA=0x00200000 # unused
-_ble_decode_IsolatedESC=$((0x07FC))
-_ble_decode_EscapedNUL=$((0x07FB)) # charlog#encode で用いる
+_ble_decode_IsolatedESC=$((0x07BC))
+_ble_decode_PrefixO=$((0x07BA)) # Used to detect "ESC O A" in bash <= 4.4
+_ble_decode_EscapedNUL=$((0x07BB)) # Used to record NUL
+_ble_decode_Timeout=$((0x07B9)) # Used to record ble/decode/wait-input failure
 _ble_decode_FunctionKeyBase=0x110000
 function ble/decode/mod2flag {
   ret=0
@@ -9307,149 +9576,43 @@ _ble_decode_kbd__n=0
 _ble_decode_kbd__c2k=()
 builtin eval -- "${_ble_util_gdict_declare//NAME/_ble_decode_kbd__k2c}"
 ble/is-assoc _ble_decode_kbd__k2c || _ble_decode_kbd_ver=adict
-function ble-decode-kbd/.set-keycode {
+function ble/decode/kbd/.set-keycode {
   local keyname=$1
   local code=$2
   : "${_ble_decode_kbd__c2k[code]:=$keyname}"
   ble/gdict#set _ble_decode_kbd__k2c "$keyname" "$code"
 }
-function ble-decode-kbd/.get-keycode {
+function ble/decode/kbd/.get-keycode {
   ble/gdict#get _ble_decode_kbd__k2c "$1"
 }
-function ble-decode-kbd/.get-keyname {
+function ble/decode/kbd/.get-keyname {
   local keycode=$1
   ret=${_ble_decode_kbd__c2k[keycode]}
   if [[ ! $ret ]] && ((keycode<_ble_decode_FunctionKeyBase)); then
     ble/util/c2s "$keycode"
   fi
 }
-function ble-decode-kbd/generate-keycode {
+function ble/decode/kbd/.generate-keycode {
   local keyname=$1
   if ((${#keyname}==1)); then
     ble/util/s2c "$1"
   elif [[ $keyname && ! ${keyname//[_a-zA-Z0-9]} ]]; then
-    ble-decode-kbd/.get-keycode "$keyname"
+    ble/decode/kbd/.get-keycode "$keyname"
     if [[ ! $ret ]]; then
       ((ret=_ble_decode_FunctionKeyBase+_ble_decode_kbd__n++))
-      ble-decode-kbd/.set-keycode "$keyname" "$ret"
+      ble/decode/kbd/.set-keycode "$keyname" "$ret"
     fi
   else
     ret=-1
     return 1
   fi
 }
-function ble-decode-kbd/.initialize {
-  ble-decode-kbd/.set-keycode TAB  9
-  ble-decode-kbd/.set-keycode RET  13
-  ble-decode-kbd/.set-keycode NUL  0
-  ble-decode-kbd/.set-keycode SOH  1
-  ble-decode-kbd/.set-keycode STX  2
-  ble-decode-kbd/.set-keycode ETX  3
-  ble-decode-kbd/.set-keycode EOT  4
-  ble-decode-kbd/.set-keycode ENQ  5
-  ble-decode-kbd/.set-keycode ACK  6
-  ble-decode-kbd/.set-keycode BEL  7
-  ble-decode-kbd/.set-keycode BS   8
-  ble-decode-kbd/.set-keycode HT   9  # aka TAB
-  ble-decode-kbd/.set-keycode LF   10
-  ble-decode-kbd/.set-keycode VT   11
-  ble-decode-kbd/.set-keycode FF   12
-  ble-decode-kbd/.set-keycode CR   13 # aka RET
-  ble-decode-kbd/.set-keycode SO   14
-  ble-decode-kbd/.set-keycode SI   15
-  ble-decode-kbd/.set-keycode DLE  16
-  ble-decode-kbd/.set-keycode DC1  17
-  ble-decode-kbd/.set-keycode DC2  18
-  ble-decode-kbd/.set-keycode DC3  19
-  ble-decode-kbd/.set-keycode DC4  20
-  ble-decode-kbd/.set-keycode NAK  21
-  ble-decode-kbd/.set-keycode SYN  22
-  ble-decode-kbd/.set-keycode ETB  23
-  ble-decode-kbd/.set-keycode CAN  24
-  ble-decode-kbd/.set-keycode EM   25
-  ble-decode-kbd/.set-keycode SUB  26
-  ble-decode-kbd/.set-keycode ESC  27
-  ble-decode-kbd/.set-keycode FS   28
-  ble-decode-kbd/.set-keycode GS   29
-  ble-decode-kbd/.set-keycode RS   30
-  ble-decode-kbd/.set-keycode US   31
-  ble-decode-kbd/.set-keycode SP   32
-  ble-decode-kbd/.set-keycode DEL  127
-  ble-decode-kbd/.set-keycode PAD  128
-  ble-decode-kbd/.set-keycode HOP  129
-  ble-decode-kbd/.set-keycode BPH  130
-  ble-decode-kbd/.set-keycode NBH  131
-  ble-decode-kbd/.set-keycode IND  132
-  ble-decode-kbd/.set-keycode NEL  133
-  ble-decode-kbd/.set-keycode SSA  134
-  ble-decode-kbd/.set-keycode ESA  135
-  ble-decode-kbd/.set-keycode HTS  136
-  ble-decode-kbd/.set-keycode HTJ  137
-  ble-decode-kbd/.set-keycode VTS  138
-  ble-decode-kbd/.set-keycode PLD  139
-  ble-decode-kbd/.set-keycode PLU  140
-  ble-decode-kbd/.set-keycode RI   141
-  ble-decode-kbd/.set-keycode SS2  142
-  ble-decode-kbd/.set-keycode SS3  143
-  ble-decode-kbd/.set-keycode DCS  144
-  ble-decode-kbd/.set-keycode PU1  145
-  ble-decode-kbd/.set-keycode PU2  146
-  ble-decode-kbd/.set-keycode STS  147
-  ble-decode-kbd/.set-keycode CCH  148
-  ble-decode-kbd/.set-keycode MW   149
-  ble-decode-kbd/.set-keycode SPA  150
-  ble-decode-kbd/.set-keycode EPA  151
-  ble-decode-kbd/.set-keycode SOS  152
-  ble-decode-kbd/.set-keycode SGCI 153
-  ble-decode-kbd/.set-keycode SCI  154
-  ble-decode-kbd/.set-keycode CSI  155
-  ble-decode-kbd/.set-keycode ST   156
-  ble-decode-kbd/.set-keycode OSC  157
-  ble-decode-kbd/.set-keycode PM   158
-  ble-decode-kbd/.set-keycode APC  159
-  ble-decode-kbd/.set-keycode @ESC "$_ble_decode_IsolatedESC"
-  ble-decode-kbd/.set-keycode @NUL "$_ble_decode_EscapedNUL"
-  local ret
-  ble-decode-kbd/generate-keycode __batch_char__
-  _ble_decode_KCODE_BATCH_CHAR=$ret
-  ble-decode-kbd/generate-keycode __defchar__
-  _ble_decode_KCODE_DEFCHAR=$ret
-  ble-decode-kbd/generate-keycode __default__
-  _ble_decode_KCODE_DEFAULT=$ret
-  ble-decode-kbd/generate-keycode __before_widget__
-  _ble_decode_KCODE_BEFORE_WIDGET=$ret
-  ble-decode-kbd/generate-keycode __after_widget__
-  _ble_decode_KCODE_AFTER_WIDGET=$ret
-  ble-decode-kbd/generate-keycode __attach__
-  _ble_decode_KCODE_ATTACH=$ret
-  ble-decode-kbd/generate-keycode __detach__
-  _ble_decode_KCODE_DETACH=$ret
-  ble-decode-kbd/generate-keycode shift
-  _ble_decode_KCODE_SHIFT=$ret
-  ble-decode-kbd/generate-keycode alter
-  _ble_decode_KCODE_ALTER=$ret
-  ble-decode-kbd/generate-keycode control
-  _ble_decode_KCODE_CONTROL=$ret
-  ble-decode-kbd/generate-keycode meta
-  _ble_decode_KCODE_META=$ret
-  ble-decode-kbd/generate-keycode super
-  _ble_decode_KCODE_SUPER=$ret
-  ble-decode-kbd/generate-keycode hyper
-  _ble_decode_KCODE_HYPER=$ret
-  ble-decode-kbd/generate-keycode __ignore__
-  _ble_decode_KCODE_IGNORE=$ret
-  ble-decode-kbd/generate-keycode __error__
-  _ble_decode_KCODE_ERROR=$ret
-  ble-decode-kbd/generate-keycode __line_limit__
-  _ble_decode_KCODE_LINE_LIMIT=$ret
-  ble-decode-kbd/generate-keycode mouse
-  _ble_decode_KCODE_MOUSE=$ret
-  ble-decode-kbd/generate-keycode mouse_move
-  _ble_decode_KCODE_MOUSE_MOVE=$ret
-  ble-decode-kbd/generate-keycode auto_complete_enter
+function ble/decode/kbd/generate-keycode {
+  ble/decode/cmap/initialize
+  ble/decode/kbd/.generate-keycode "$@"
 }
-ble-decode-kbd/.initialize
 function ble-decode-kbd {
+  ble/decode/cmap/initialize
   local IFS=$_ble_term_IFS
   local spec="$*"
   case $spec in
@@ -9497,8 +9660,8 @@ function ble-decode-kbd {
       ble/util/s2c "$kspec"
       ((code|=ret))
     elif [[ $kspec && ! ${kspec//[@_a-zA-Z0-9]} ]]; then
-      ble-decode-kbd/.get-keycode "$kspec"
-      [[ $ret ]] || ble-decode-kbd/generate-keycode "$kspec"
+      ble/decode/kbd/.get-keycode "$kspec"
+      [[ $ret ]] || ble/decode/kbd/.generate-keycode "$kspec"
       ((code|=ret))
     elif [[ $kspec == ^? ]]; then
       if [[ $kspec == '^?' ]]; then
@@ -9522,7 +9685,7 @@ function ble-decode-unkbd/.single-key {
   local key=$1
   local f_unknown=
   local char=$((key&_ble_decode_MaskChar))
-  ble-decode-kbd/.get-keyname "$char"
+  ble/decode/kbd/.get-keyname "$char"
   if [[ ! $ret ]]; then
     f_unknown=1
     ret=__UNKNOWN__
@@ -9536,6 +9699,7 @@ function ble-decode-unkbd/.single-key {
   [[ ! $f_unknown ]]
 }
 function ble-decode-unkbd {
+  ble/decode/cmap/initialize
   local IFS=$_ble_term_IFS
   local -a kspecs
   local key
@@ -9546,6 +9710,7 @@ function ble-decode-unkbd {
   ret="${kspecs[*]}"
 }
 function ble/decode/keys2chars {
+  ble/decode/cmap/initialize
   local -a keys=()
   local key
   for key; do
@@ -9769,7 +9934,7 @@ function _ble_decode_hook {
       ble-decode/PROLOGUE
       _ble_decode_hook_Processing=body
       local char=${_ble_decode_input_buffer[buflen-1]}
-      if ((_ble_bash<40000||char==0xC0||char==0xDF)); then
+      if ((_ble_bash<40000||char==0xC0||char==0xDE)); then
         builtin eval -- "$_ble_decode_show_progress_hook"
       else
         while ble/util/is-stdin-ready; do
@@ -9812,14 +9977,14 @@ function _ble_decode_hook {
       ((_ble_decode_input_count<0)) && _ble_decode_input_count=0
       builtin eval -- "$_ble_decode_show_progress_hook"
       ((_ble_debug_keylog_enabled)) && ble/array#push _ble_debug_keylog_bytes "${chars[@]:i:B}"
-      "ble/encoding:$bleopt_input_encoding/decode" "${chars[@]:i:B}"
+      ble/encoding:"$bleopt_input_encoding/decode" "${chars[@]:i:B}"
     done
   else
     local c
     for c in "${chars[@]}"; do
       ((--_ble_decode_input_count))
       ((_ble_debug_keylog_enabled)) && ble/array#push _ble_debug_keylog_bytes "$c"
-      "ble/encoding:$bleopt_input_encoding/decode" "$c"
+      ble/encoding:"$bleopt_input_encoding/decode" "$c"
     done
   fi
   ble/decode/has-input || ble-decode-key/batch/flush
@@ -9829,7 +9994,7 @@ function _ble_decode_hook {
 }
 function ble-decode-byte {
   while (($#)); do
-    "ble/encoding:$bleopt_input_encoding/decode" "$1"
+    ble/encoding:"$bleopt_input_encoding"/decode "$1"
     shift
   done
 }
@@ -9838,7 +10003,7 @@ _ble_decode_csi_args=
 _ble_decode_csimap_tilde=()
 _ble_decode_csimap_alpha=()
 _ble_decode_csimap_dict=()
-function ble-decode-char/csi/print/.print-csidef {
+function ble/decode/csi/print/.print-csidef {
   local qalpha qkey ret q=\' Q="'\''"
   if [[ $sgrq ]]; then
     ble/string#quote-word "$1" quote-empty:sgrq="$sgrq":sgr0="$sgr0"; qalpha=$ret
@@ -9849,32 +10014,32 @@ function ble-decode-char/csi/print/.print-csidef {
   fi
   ble/util/print "${sgrf}ble-bind$sgr0 $sgro--csi$sgr0 $qalpha $qkey"
 }
-function ble-decode-char/csi/print {
+function ble/decode/csi/print {
   [[ $ble_bind_print ]] || local sgr0= sgrf= sgrq= sgrc= sgro=
   local num ret
   for num in "${!_ble_decode_csimap_tilde[@]}"; do
     ble-decode-unkbd "${_ble_decode_csimap_tilde[num]}"
-    ble-decode-char/csi/print/.print-csidef "$num~" "$ret"
+    ble/decode/csi/print/.print-csidef "$num~" "$ret"
   done
   for num in "${!_ble_decode_csimap_alpha[@]}"; do
     local s; ble/util/c2s "$num"; s=$ret
     ble-decode-unkbd "${_ble_decode_csimap_alpha[num]}"
-    ble-decode-char/csi/print/.print-csidef "$s" "$ret"
+    ble/decode/csi/print/.print-csidef "$s" "$ret"
   done
 }
-function ble-decode-char/csi/clear {
+function ble/decode/csi/clear {
   _ble_decode_csi_mode=0
 }
 _ble_decode_csimap_kitty_u=()
-function ble-decode/char/csi/.translate-kitty-csi-u {
+function ble/decode/csi/.translate-kitty-csi-u {
   local name=${_ble_decode_csimap_kitty_u[key]}
   if [[ $name ]]; then
     local ret
-    ble-decode-kbd/generate-keycode "$name"
+    ble/decode/kbd/.get-keycode "$name"
     key=$ret
   fi
 }
-function ble-decode-char/csi/.modify-key {
+function ble/decode/csi/.modify-key {
   local mod=$(($1-1))
   if ((mod>=0)); then
     if ((33<=key&&key<_ble_decode_FunctionKeyBase)); then
@@ -9894,14 +10059,14 @@ function ble-decode-char/csi/.modify-key {
     ((key|=ret))
   fi
 }
-function ble-decode-char/csi/.decode {
+function ble/decode/csi/.decode {
   local char=$1 rex key
   if ((char==126)); then # ~
     if rex='^>?27;([0-9]+);?([0-9]+)$' && [[ $_ble_decode_csi_args =~ $rex ]]; then
       local param1=$((10#0${BASH_REMATCH[1]}))
       local param2=$((10#0${BASH_REMATCH[2]}))
       local key=$((param2&_ble_decode_MaskChar))
-      ble-decode-char/csi/.modify-key "$param1"
+      ble/decode/csi/.modify-key "$param1"
       csistat=$key
       return 0
     fi
@@ -9910,7 +10075,7 @@ function ble-decode-char/csi/.decode {
       local param3=$((10#0${BASH_REMATCH[3]}))
       key=${_ble_decode_csimap_tilde[param1]}
       if [[ $key ]]; then
-        ble-decode-char/csi/.modify-key "$param3"
+        ble/decode/csi/.modify-key "$param3"
         csistat=$key
         return 0
       fi
@@ -9920,8 +10085,8 @@ function ble-decode-char/csi/.decode {
       local rematch1=${BASH_REMATCH[1]}
       if [[ $rematch1 != 1 ]]; then
         local key=$((10#0$rematch1)) mods=$((10#0${BASH_REMATCH:${#rematch1}+1}))
-        [[ $_ble_term_TERM == kitty:* ]] && ble-decode/char/csi/.translate-kitty-csi-u
-        ble-decode-char/csi/.modify-key "$mods"
+        [[ $_ble_term_TERM == kitty:* ]] && ble/decode/csi/.translate-kitty-csi-u
+        ble/decode/csi/.modify-key "$mods"
         csistat=$key
       fi
       return 0
@@ -9934,7 +10099,7 @@ function ble-decode-char/csi/.decode {
       if [[ $key ]]; then
         ((key|=_ble_decode_Ctrl,
           char==64&&(key|=_ble_decode_Shft)))
-        ble-decode-char/csi/.modify-key "$param3"
+        ble/decode/csi/.modify-key "$param3"
         csistat=$key
         return 0
       fi
@@ -9969,7 +10134,7 @@ function ble-decode-char/csi/.decode {
         _ble_term_mouse_y=param3-1))
       local key=$_ble_decode_KCODE_MOUSE
       ((button&32)) && key=$_ble_decode_KCODE_MOUSE_MOVE
-      ble-decode-char/csi/.modify-key "$((button>>2&0x07))"
+      ble/decode/csi/.modify-key "$((button>>2&0x07))"
       csistat=$key
       return 0
     fi
@@ -9988,14 +10153,14 @@ function ble-decode-char/csi/.decode {
   if [[ $key ]]; then
     if rex='^(1?|>?1;([0-9]+))$' && [[ $_ble_decode_csi_args =~ $rex ]]; then
       local param2=$((10#0${BASH_REMATCH[2]}))
-      ble-decode-char/csi/.modify-key "$param2"
+      ble/decode/csi/.modify-key "$param2"
       csistat=$key
       return 0
     fi
   fi
   csistat=$_ble_decode_KCODE_ERROR
 }
-function ble-decode-char/csi/consume {
+function ble/decode/csi/consume {
   csistat=
   ((_ble_decode_csi_mode==0&&$1!=27&&$1!=155)) && return 1
   local char=$1
@@ -10020,7 +10185,7 @@ function ble-decode-char/csi/consume {
       csistat=_
     elif ((64<=char&&char<127)); then
       _ble_decode_csi_mode=0
-      ble-decode-char/csi/.decode "$char"
+      ble/decode/csi/.decode "$char"
       ((csistat==27)) && csistat=$_ble_decode_IsolatedESC
     else
       _ble_decode_csi_mode=0
@@ -10036,8 +10201,10 @@ function ble/decode/has-input-for-char {
 _ble_decode_char__hook=
 _ble_decode_cmap_=()
 _ble_decode_char2_seq=
+_ble_decode_char2_keylog=()
 _ble_decode_char2_reach_key=
 _ble_decode_char2_reach_seq=
+_ble_decode_char2_reach_keylog=()
 _ble_decode_char2_modifier=
 _ble_decode_char2_modkcode=
 _ble_decode_char2_modseq=()
@@ -10050,8 +10217,9 @@ function ble-decode-char {
   local iloop=0
   local ble_decode_char_total=$#
   local ble_decode_char_rest=$#
-  local ble_decode_char_char=
-  local chars ichar char ent
+  local ble_decode_char_rchar=
+  local ble_decode_char_next=
+  local chars ichar rchar char ent ent_timeout
   chars=("$@") ichar=0
   while
     if ((iloop++%50==0)); then
@@ -10070,17 +10238,16 @@ function ble-decode-char {
     fi
     ((ble_decode_char_rest))
   do
-    char=${chars[ichar]}
-    ble_decode_char_char=$char # 補正前 char (_ble_decode_Macr 判定の為)
+    rchar=${chars[ichar]} # raw char
+    ble_decode_char_rchar=$rchar # used by ble/widget/.MACRO to test _ble_decode_Macr
+    ((char=rchar&~_ble_decode_Macr))
     ((ble_decode_char_rest--,ichar++))
-    ((_ble_debug_keylog_enabled)) && ble/array#push _ble_debug_keylog_chars "$char"
-    if [[ $_ble_decode_keylog_chars_enabled ]]; then
-      if ! ((char&_ble_decode_Macr)); then
-        ble/array#push _ble_decode_keylog_chars "$char"
-        ((_ble_decode_keylog_chars_count++))
-      fi
+    ble_decode_char_next=$((${chars[ichar]:-0}&~_ble_decode_Macr)) # for ble/decode/wait-input '...' char
+    if ((char==_ble_decode_PrefixO)); then
+      char=79 # @prefixO -> O
+    elif ((char==_ble_decode_Timeout)); then
+      continue
     fi
-    ((char&=~_ble_decode_Macr))
     if ((char&_ble_decode_Erro)); then
       ((char&=~_ble_decode_Erro))
       if [[ $bleopt_decode_error_char_vbell ]]; then
@@ -10088,52 +10255,65 @@ function ble-decode-char {
         ble/term/visible-bell "received a misencoded char $name"
       fi
       [[ $bleopt_decode_error_char_abell ]] && ble/term/audible-bell
-      [[ $bleopt_decode_error_char_discard ]] && continue
+      if [[ $bleopt_decode_error_char_discard ]]; then
+        ble/decode/process-char/.keylog "$rchar"
+        continue
+      fi
     fi
     if [[ $_ble_decode_char__hook ]]; then
       ((char==_ble_decode_IsolatedESC)) && char=27 # isolated ESC -> ESC
       local hook=$_ble_decode_char__hook
       _ble_decode_char__hook=
+      ble/decode/process-char/.keylog "$rchar"
       ble-decode/widget/.call-async-read "$hook $char" "$char"
       continue
     fi
-    ble-decode-char/.getent # -> ent
+    ble/decode/process-char/.getent # -> ent ent_timeout
     if [[ ! $ent ]]; then
       if [[ $_ble_decode_char2_reach_key ]]; then
         local key=$_ble_decode_char2_reach_key
-        local seq=$_ble_decode_char2_reach_seq
-        local rest=${_ble_decode_char2_seq:${#seq}}
-        ble/string#split-words rest "${rest//_/ } $ble_decode_char_char"
+        local seq=$_ble_decode_char2_reach_seq rest
+        rest=("${_ble_decode_char2_keylog[@]:${#_ble_decode_char2_reach_keylog[@]}}" "$rchar")
+        ble/decode/process-char/.keylog "${_ble_decode_char2_reach_keylog[@]}"
         _ble_decode_char2_seq=
+        _ble_decode_char2_keylog=()
         _ble_decode_char2_reach_key=
         _ble_decode_char2_reach_seq=
-        ble-decode-char/csi/clear
+        _ble_decode_char2_reach_keylog=()
+        ble/decode/csi/clear
         ble/decode/send-unmodified-key "$key" "$seq"
         ((ble_decode_char_total+=${#rest[@]}))
         ((ble_decode_char_rest+=${#rest[@]}))
         chars=("${rest[@]}" "${chars[@]:ichar}") ichar=0
       else
+        ble/decode/process-char/.keylog "$rchar" ${ent_timeout:+"$_ble_decode_Timeout"}
         local ret
         ble/decode/process-char/.convert-c0 "$char"
         ble/decode/send-unmodified-key "$ret" "_$char"
       fi
     elif [[ $ent == *_ ]]; then
       _ble_decode_char2_seq=${_ble_decode_char2_seq}_$char
+      ble/array#push _ble_decode_char2_keylog "$rchar"
       if [[ ${ent%_} ]]; then
         _ble_decode_char2_reach_key=${ent%_}
         _ble_decode_char2_reach_seq=$_ble_decode_char2_seq
+        _ble_decode_char2_reach_keylog=("${_ble_decode_char2_keylog[@]}")
       elif [[ ! $_ble_decode_char2_reach_key ]]; then
         local ret
         ble/decode/process-char/.convert-c0 "$char"
         _ble_decode_char2_reach_key=$ret
         _ble_decode_char2_reach_seq=$_ble_decode_char2_seq
+        _ble_decode_char2_reach_keylog=("${_ble_decode_char2_keylog[@]}")
       fi
     else
       local seq=${_ble_decode_char2_seq}_$char
+      ble/decode/process-char/.keylog "${_ble_decode_char2_keylog[@]}" "$rchar" ${ent_timeout:+"$_ble_decode_Timeout"}
       _ble_decode_char2_seq=
+      _ble_decode_char2_keylog=()
       _ble_decode_char2_reach_key=
       _ble_decode_char2_reach_seq=
-      ble-decode-char/csi/clear
+      _ble_decode_char2_reach_keylog=()
+      ble/decode/csi/clear
       ble/decode/send-unmodified-key "$ent" "$seq"
     fi
   done
@@ -10148,17 +10328,37 @@ function ble/decode/char-hook/next-char {
   ((ble_decode_char_rest--,ichar++,iloop++))
   return 0
 }
-function ble-decode-char/.getent {
-  builtin eval "ent=\${_ble_decode_cmap_$_ble_decode_char2_seq[char]-}"
-  if [[ $ent == ?*_ || $ent == _ && $_ble_decode_char2_seq == _27 ]]; then
-    ble/decode/wait-input 5 char || ent=${ent%_}
+function ble/decode/process-char/.keylog {
+  if ((_ble_debug_keylog_enabled)); then
+    ble/array#push _ble_debug_keylog_chars "$@"
   fi
+  if [[ $_ble_decode_keylog_chars_enabled ]]; then
+    local char
+    for char; do
+      if ! ((char&_ble_decode_Macr)); then
+        ble/array#push _ble_decode_keylog_chars "$char"
+        ((_ble_decode_keylog_chars_count++))
+      fi
+    done
+  fi
+}
+function ble/decode/process-char/.getent {
   local csistat=
-  ble-decode-char/csi/consume "$char"
+  builtin eval "ent=\${_ble_decode_cmap_$_ble_decode_char2_seq[char]-}"
+  ble/decode/csi/consume "$char"
+  if [[ $ent == ?*_ || $ent == _ && $_ble_decode_char2_seq == _27 ]]; then
+    if ((rchar!=_ble_decode_PrefixO)) && ! ble/decode/wait-input 5 char; then
+      ent=${ent%_}
+      ent_timeout=1
+    fi
+  fi
   if [[ $csistat && ! ${ent%_} ]]; then
-    if ((csistat==_ble_decode_KCODE_ERROR)); then
+    ent_timeout=
+    if [[ $csistat == "$_ble_decode_KCODE_ERROR" ]]; then
       if [[ $bleopt_decode_error_cseq_vbell ]]; then
-        local ret; ble-decode-unkbd ${_ble_decode_char2_seq//_/ } $char
+        local ret
+        ble/string#split ret "${_ble_decode_char2_seq//_/ } $char"
+        ble-decode-unkbd "${ret[@]}"
         ble/term/visible-bell "unrecognized CSI sequence: $ret"
       fi
       [[ $bleopt_decode_error_cseq_abell ]] && ble/term/audible-bell
@@ -10366,7 +10566,7 @@ function ble/decode/keymap#.onload {
   local kmap=$1
   local delay=$_ble_base_run/$$.bind.delay.$kmap
   if [[ -s $delay ]]; then
-    source "$delay"
+    source -- "$delay"
     >| "$delay"
   fi
 }
@@ -10657,6 +10857,16 @@ function ble/decode/keymap/get-parent {
     ret=
   fi
 }
+function ble/decode/keymap/get-major-keymap {
+  keymap=$_ble_decode_keymap
+  local index=${#_ble_decode_keymap_stack[@]}
+  while ((1)); do
+    case $keymap in (vi_?map|emacs) return 0 ;; esac
+    ((--index<0)) && break
+    keymap=${_ble_decode_keymap_stack[index]}
+  done
+  return 1
+}
 _ble_decode_key__chars=()
 _ble_decode_key__seq=
 _ble_decode_key__hook=
@@ -10873,7 +11083,7 @@ function ble/decode/widget/call {
   builtin eval -- "$WIDGET"
 }
 function ble/decode/widget/dispatch {
-  local ret; ble/string#quote-command "ble/widget/${1#ble/widget/}" "${@:2}"
+  local ret; ble/string#quote-command ble/widget/"${1#ble/widget/}" "${@:2}"
   local WIDGET=$ret
   _ble_decode_widget_last=$WIDGET
   builtin eval -- "$WIDGET"
@@ -10915,6 +11125,7 @@ function ble/decode/has-input-char {
 function ble/decode/wait-input {
   local timeout=$1 type=${2-}
   if [[ $type == char ]]; then
+    ((ble_decode_char_next==_ble_decode_Timeout)) && return 1
     ble/decode/has-input-char && return 0
   else
     ble/decode/has-input && return 0
@@ -11074,7 +11285,7 @@ function ble/decode/keylog#decode-chars {
 }
 _ble_decode_macro_count=0
 function ble/widget/.MACRO {
-  if ((ble_decode_char_char&_ble_decode_Macr)); then
+  if ((ble_decode_char_rchar&_ble_decode_Macr)); then
     if ((_ble_decode_macro_count++>=bleopt_decode_macro_limit)); then
       ((_ble_decode_macro_count==bleopt_decode_macro_limit+1)) &&
         ble/term/visible-bell "Macro invocation is canceled by decode_macro_limit"
@@ -11089,9 +11300,6 @@ function ble/widget/.MACRO {
     ble/array#push chars "$((char|_ble_decode_Macr))"
   done
   ble-decode-char "${chars[@]}"
-}
-function ble/widget/.CHARS {
-  ble-decode-char "$@"
 }
 function ble/decode/c2dqs {
   local i=$1
@@ -11138,48 +11346,16 @@ function ble/decode/cmap/.generate-binder-template {
     fi
   done
 }
-function ble/decode/cmap/.emit-bindx {
-  local q="'" Q="'\''"
-  ble/util/print "builtin bind -x '\"${1//$q/$Q}\":_ble_decode_hook $2; builtin eval -- \"\$_ble_decode_bind_hook\"'"
-}
-function ble/decode/cmap/.emit-bindr {
-  ble/util/print "builtin bind -r \"$1\""
-}
-_ble_decode_cmap_initialized=
 function ble/decode/cmap/initialize {
-  [[ $_ble_decode_cmap_initialized ]] && return 0
-  _ble_decode_cmap_initialized=1
+  function ble/decode/cmap/initialize { return 0; }
   local init=$_ble_base/lib/init-cmap.sh
   local dump=$_ble_base_cache/decode.cmap.$_ble_decode_kbd_ver.$TERM.dump
+  local hash='015701ad744b9fdedb46d589a94ac9af5a8fdb60'
   if [[ -s $dump && $dump -nt $init ]]; then
-    source "$dump"
-  else
-    ble/edit/info/immediate-show text 'ble.sh: generating "'"$dump"'"...'
-    source "$init"
-    ble-bind -D | ble/bin/awk '
-      {
-        sub(/^declare +(-[aAilucnrtxfFgGI]+ +)?/, "");
-        sub(/^-- +/, "");
-      }
-      /^_ble_decode_(cmap|csimap|kbd)/ {
-        if (!($0 ~ /^_ble_decode_csimap_kitty_u/))
-          gsub(/["'\'']/, "");
-        print
-      }
-    ' >| "$dump"
+    source -- "$dump"
+    [[ $_ble_decode_cmap_cache_hash == "$hash" ]] && return 0
   fi
-  if ((_ble_bash>=40300)); then
-    local fbinder=$_ble_base_cache/decode.cmap.allseq
-    _ble_decode_bind_fbinder=$fbinder
-    if ! [[ -s $_ble_decode_bind_fbinder.bind && $_ble_decode_bind_fbinder.bind -nt $init &&
-              -s $_ble_decode_bind_fbinder.unbind && $_ble_decode_bind_fbinder.unbind -nt $init ]]; then
-      ble/edit/info/immediate-show text  'ble.sh: initializing multi-character sequence binders... '
-      ble/decode/cmap/.generate-binder-template >| "$fbinder"
-      binder=ble/decode/cmap/.emit-bindx source "$fbinder" >| "$fbinder.bind"
-      binder=ble/decode/cmap/.emit-bindr source "$fbinder" >| "$fbinder.unbind"
-      ble/edit/info/immediate-show text  'ble.sh: initializing multi-character sequence binders... done'
-    fi
-  fi
+  source -- "$init"
 }
 function ble/decode/cmap/decode-chars.hook {
   ble/array#push ble_decode_bind_keys "$1"
@@ -11321,15 +11497,20 @@ _ble_decode_bind_encoding=
 function ble/decode/readline/bind {
   _ble_decode_bind_encoding=$bleopt_input_encoding
   local file=$_ble_base_cache/decode.bind.$_ble_bash.$_ble_decode_bind_encoding.bind
-  [[ -s $file && $file -nt $_ble_base/lib/init-bind.sh ]] || source "$_ble_base/lib/init-bind.sh"
   ble/term/rl-convert-meta/enter
-  source "$file"
+  local hash='d2348e25759c982a945fb64c2a8bce9940f78eae'
+  local _ble_decode_bind_cache_hash=
+  [[ -s $file && $file -nt $_ble_base/lib/init-bind.sh ]] && source -- "$file"
+  if [[ $_ble_decode_bind_cache_hash != "$hash" ]]; then
+    source -- "$_ble_base/lib/init-bind.sh"
+    source -- "$file"
+  fi
   _ble_decode_bind__uvwflag=
   ble/util/assign _ble_decode_bind_bindp 'builtin bind -p' # TERM 変更検出用
 }
 function ble/decode/readline/unbind {
   ble/function#try ble/encoding:"$bleopt_input_encoding"/clear
-  source "$_ble_base_cache/decode.bind.$_ble_bash.$_ble_decode_bind_encoding.unbind"
+  source -- "$_ble_base_cache/decode.bind.$_ble_bash.$_ble_decode_bind_encoding.unbind"
 }
 function ble/decode/readline/rebind {
   [[ $_ble_decode_bind_state == none ]] && return 0
@@ -11440,7 +11621,7 @@ function ble/decode/bind/option:csi {
   fi
 }
 function ble/decode/bind/option:list-widgets {
-  declare -f | ble/bin/sed -n 's/^ble\/widget\/\([a-zA-Z][^.[:space:]();&|]\{1,\}\)[[:space:]]*()[[:space:]]*$/\1/p'
+  declare -f | ble/bin/sed -n 's/^ble\/widget\/\([a-zA-Z][^.[:blank:]();&|]\{1,\}\)[[:blank:]]*()[[:blank:]]*$/\1/p'
 }
 function ble/decode/bind/option:dump {
   if (($#)); then
@@ -11449,7 +11630,7 @@ function ble/decode/bind/option:dump {
       ble/decode/keymap#dump "$keymap"
     done
   else
-    ble/util/declare-print-definitions "${!_ble_decode_kbd__@}" "${!_ble_decode_cmap_@}" "${!_ble_decode_csimap_@}"
+    ble/util/declare-print-definitions "${!_ble_decode_kbd__@}" "${!_ble_decode_KCODE_@}" "${!_ble_decode_cmap_@}" "${!_ble_decode_csimap_@}"
     ble/decode/keymap#dump
   fi
 }
@@ -11468,10 +11649,11 @@ function ble/decode/bind/option:print {
   ble-decode/INITIALIZE_DEFMAP -v keymap # 初期化を強制する
   if (($#)); then
     for keymap; do
+      ble/decode/keymap#load "$keymap"
       ble/decode/keymap#print "$keymap"
     done
   else
-    ble-decode-char/csi/print
+    ble/decode/csi/print
     ble-decode-char/print
     ble/decode/keymap#print
   fi
@@ -11626,7 +11808,7 @@ function ble/decode/bind {
 function ble/decode/read-inputrc/test {
   local text=$1
   if [[ ! $text ]]; then
-    ble/util/print "ble.sh (bind):\$if: test condition is not supplied." >&2
+    ble/builtin/bind/.print-error "\$if: test condition is not supplied."
     return 1
   elif local rex=$'[ \t]*([<>]=?|[=!]?=)[ \t]*(.*)$'; [[ $text =~ $rex ]]; then
     local op=${BASH_REMATCH[1]}
@@ -11647,7 +11829,7 @@ function ble/decode/read-inputrc/test {
     elif [[ -o vi ]]; then
       builtin test vi "$op" "$rhs"
     else
-      false
+      builtin false
     fi
     return "$?" ;;
   (term)
@@ -11687,7 +11869,7 @@ function ble/decode/read-inputrc/test {
       builtin test "$ret" "$op" "$rhs"
       return "$?"
     else
-      ble/util/print "ble.sh (bind):\$if: unknown readline variable '${lhs//$q/$Q}'." >&2
+      ble/builtin/bind/.print-error "\$if: unknown readline variable '${lhs//$q/$Q}'."
       return 1
     fi ;;
   esac
@@ -11698,14 +11880,15 @@ function ble/decode/read-inputrc {
     local relative_file=${ref%/*}/$file
     [[ -f $relative_file ]] && file=$relative_file
   fi
-  if [[ ! -f $file ]]; then
-    ble/util/print "ble.sh (bind):\$include: the file '${1//$q/$Q}' not found." >&2
+  local inputrc_file=$file inputrc_iline=0
+  if [[ ! -f $inputrc_file ]]; then
+    ble/builtin/bind/.print-error "\$include: the file '${1//$q/$Q}' not found."
     return 1
   fi
   local -a script=()
-  local ret line= iline=0
+  local ret line= inputrc_iline=0
   while ble/bash/read line || [[ $line ]]; do
-    ((++iline))
+    ((++inputrc_iline))
     ble/string#trim "$line"; line=$ret
     [[ ! $line || $line == '#'* ]] && continue
     if [[ $line == '$'* ]]; then
@@ -11714,20 +11897,23 @@ function ble/decode/read-inputrc {
       ('$if')
         local args=${line#'$if'}
         ble/string#trim "$args"; args=$ret
+        ble/array#push script "inputrc_iline=$inputrc_iline"
         ble/array#push script "if ble/decode/read-inputrc/test '${args//$q/$Q}'; then :" ;;
       ('$else')  ble/array#push script 'else :' ;;
       ('$endif') ble/array#push script 'fi' ;;
       ('$include')
         local args=${line#'$include'}
         ble/string#trim "$args"; args=$ret
-        ble/array#push script "ble/decode/read-inputrc '${args//$q/$Q}' '${file//$q/$Q}'" ;;
+        ble/array#push script "inputrc_iline=$inputrc_iline"
+        ble/array#push script "ble/decode/read-inputrc '${args//$q/$Q}' '${inputrc_file//$q/$Q}'" ;;
       (*)
-        ble/util/print "ble.sh (bind):$file:$iline: unrecognized directive '$directive'." >&2 ;;
+        ble/builtin/bind/.print-error "unrecognized directive '$directive'." ;;
       esac
     else
+      ble/array#push script "inputrc_iline=$inputrc_iline"
       ble/array#push script "ble/builtin/bind/.process -- '${line//$q/$Q}'"
     fi
-  done < "$file"
+  done < "$inputrc_file"
   IFS=$'\n' builtin eval 'script="${script[*]}"'
   builtin eval -- "$script"
 }
@@ -11738,6 +11924,34 @@ function ble/builtin/bind/set-keymap {
     _ble_builtin_bind_keymap=$opt_keymap
   return 0
 }
+function ble/builtin/bind/.print-error.find-caller {
+  for ((;level<${#FUNCNAME[@]}+1;level++)); do
+    f=${FUNCNAME[1+level]-}
+    case $f in
+    (ble/builtin/bind|ble/builtin/bind/*|bind|ble/decode/read-inputrc/test) ;;
+    (*) return 0 ;;
+    esac
+  done
+  f=
+}
+function ble/builtin/bind/.print-error {
+  local title='bind (ble.sh)'
+  local level=1 f
+  ble/builtin/bind/.print-error.find-caller
+  if [[ $f == ble/decode/read-inputrc ]]; then
+    if ((inputrc_iline)); then
+      title="$inputrc_file:$inputrc_iline: bind (ble.sh)"
+      f=
+    else
+      ((++level))
+      ble/builtin/bind/.print-error.find-caller
+    fi
+  fi
+  if [[ $f && ${BASH_SOURCE[level]} ]]; then
+    title="${BASH_SOURCE[level]}:${BASH_LINENO[level-1]}: bind (ble.sh)"
+  fi
+  ble/util/print "$title: $1" >&2
+}
 function ble/builtin/bind/option:m {
   local name=$1
   local ret; ble/string#tolower "$name"; local keymap=$ret
@@ -11747,7 +11961,7 @@ function ble/builtin/bind/option:m {
   (*) keymap= ;;
   esac
   if [[ ! $keymap ]]; then
-    ble/util/print "ble.sh (bind): unrecognized keymap name '$name'" >&2
+    ble/builtin/bind/.print-error "unrecognized keymap name '$name'"
     flags=e$flags
     return 1
   else
@@ -11763,11 +11977,11 @@ function ble/builtin/bind/.unquote-macro-string {
   fi
   local rex='^'$delim'(([^\'$delim']|\\.)*)'$delim'['$_ble_term_IFS']*'
   if ! [[ $value =~ $rex ]]; then
-    ble/util/print "ble.sh (bind): no closing '${delim//$q/$Q}' in spec: '${spec//$q/$Q}'" >&2
+    ble/builtin/bind/.print-error "no closing '${delim//$q/$Q}' in spec: '${spec//$q/$Q}'"
     return 1
   elif ((${#BASH_REMATCH}<${#value})); then
     local fragment=${value:${#BASH_REMATCH}}
-    ble/util/print "ble.sh (bind): warning: unprocessed fragments '${fragment//$q/$Q}' in spec: '${spec//$q/$Q}'" >&2
+    ble/builtin/bind/.print-error "warning: unprocessed fragments '${fragment//$q/$Q}' in spec: '${spec//$q/$Q}'"
   fi
   ret=${BASH_REMATCH[1]}
 }
@@ -11780,7 +11994,7 @@ function ble/builtin/bind/.decompose-pair.impl {
   local rex_keyseq='^(("([^\"]|\\.)*"|[^":'$ifs'])*("([^\"]|\\.)*)?)'
   if [[ :$2: == *:user-command:* ]]; then
     if ! ble/string#match "$spec" "$rex_keyseq[$ifs]*[:$ifs]"; then
-      ble/util/print "ble.sh (bind): no colon or space after keyseq: '${spec//$q/$Q}'" >&3
+      ble/builtin/bind/.print-error "no colon or space after keyseq: '${spec//$q/$Q}'" 2>&3
       return 1
     fi
     local rematch=$BASH_REMATCH
@@ -11796,7 +12010,7 @@ function ble/builtin/bind/.decompose-pair.impl {
         ble/util/keyseq2chars "$ret"
         ble/util/chars2s "${ret[@]}"
       else
-        ble/util/print "ble.sh (bind): the user command needs to be surrounded by \"..\": '${spec//$q/$Q}'" >&3
+        ble/builtin/bind/.print-error "the user command needs to be surrounded by \"..\": '${spec//$q/$Q}'" 2>&3
         return 1
       fi
     fi
@@ -11815,16 +12029,16 @@ function ble/builtin/bind/.decompose-pair.impl {
   if [[ $keyseq == '$'* ]]; then
     return 3
   elif [[ ! $keyseq ]]; then
-    ble/util/print "ble.sh (bind): empty keyseq in spec: '${spec//$q/$Q}'" >&3
+    ble/builtin/bind/.print-error "empty keyseq in spec: '${spec//$q/$Q}'" 2>&3
     return 1
   elif ble/string#match "$keyseq" '^"([^\"]|\\.)*$'; then
-    ble/util/print "ble.sh (bind): no closing '\"' in keyseq: '${keyseq//$q/$Q}'" >&3
+    ble/builtin/bind/.print-error "no closing '\"' in keyseq: '${keyseq//$q/$Q}'" 2>&3
     return 1
   elif ble/string#match "$keyseq" '^"([^\"]|\\.)*"'; then
     local rematch=${BASH_REMATCH[0]}
     if ((${#rematch}<${#keyseq})); then
       local fragment=${keyseq:${#rematch}}
-      ble/util/print "ble.sh (bind): warning: unprocessed fragments in keyseq '${fragment//$q/$Q}'" >&3
+      ble/builtin/bind/.print-error "warning: unprocessed fragments in keyseq '${fragment//$q/$Q}'" 2>&3
     fi
     keyseq=$rematch
     return 0
@@ -11889,10 +12103,14 @@ function ble/builtin/bind/.initialize-keys-and-value {
   if [[ $keyseq == \"*\" ]]; then
     local ret; ble/util/keyseq2chars "${keyseq:1:${#keyseq}-2}"
     chars=("${ret[@]}")
-    ((${#chars[@]})) || ble/util/print "ble.sh (bind): warning: empty keyseq" >&2
+    ((${#chars[@]})) || ble/builtin/bind/.print-error "warning: empty keyseq: $keyseq"
+    ((_ble_bash<40300)) &&
+      [[ :$opts: == *:check-bindx-bash42bug:* ]] &&
+      ((${#chars[@]}>2)) &&
+      bindx_bash42bug=1
   else
     [[ :$opts: == *:nokeyname:* ]] &&
-      ble/util/print "ble.sh (bind): warning: readline \"bind -x\" does not support \"keyname\" spec" >&2
+      ble/builtin/bind/.print-error "warning: readline \"bind -x\" does not support \"keyname\" spec"
     ble/builtin/bind/.parse-keyname "$keyseq"
   fi
   ble/decode/cmap/decode-chars "${chars[@]}"
@@ -11900,12 +12118,12 @@ function ble/builtin/bind/.initialize-keys-and-value {
 function ble/builtin/bind/option:x {
   local q=\' Q="''\'"
   local keys value kmap
-  if ! ble/builtin/bind/.initialize-keys-and-value "$1" nokeyname:user-command; then
-    ble/util/print "ble.sh (bind): unrecognized user-command spec '${1//$q/$Q}'." >&2
+  if ! ble/builtin/bind/.initialize-keys-and-value "$1" nokeyname:user-command:check-bindx-bash42bug; then
+    ble/builtin/bind/.print-error "unrecognized user-command spec '${1//$q/$Q}'."
     flags=e$flags
     return 1
   elif ! ble/builtin/bind/.initialize-kmap "$opt_keymap"; then
-    ble/util/print "ble.sh (bind): sorry, failed to initialize keymap:'$opt_keymap'." >&2
+    ble/builtin/bind/.print-error "sorry, failed to initialize keymap:'$opt_keymap'."
     flags=e$flags
     return 1
   fi
@@ -11925,9 +12143,9 @@ function ble/builtin/bind/option:r {
 _ble_decode_rlfunc2widget_emacs=()
 _ble_decode_rlfunc2widget_vi_imap=()
 _ble_decode_rlfunc2widget_vi_nmap=()
-function ble/builtin/bind/rlfunc2widget {
-  local kmap=$1 rlfunc=$2
-  local IFS=$_ble_term_IFS
+function ble/builtin/bind/rlfunc2widget/load-dict {
+  local kmap=${1-}
+  ble/decode/bind/.initialize-kmap
   local rlfunc_file= rlfunc_dict=
   case $kmap in
   (emacs)   rlfunc_file=$_ble_base/lib/core-decode.emacs-rlfunc.txt
@@ -11937,19 +12155,25 @@ function ble/builtin/bind/rlfunc2widget {
   (vi_nmap) rlfunc_file=$_ble_base/lib/core-decode.vi_nmap-rlfunc.txt
             rlfunc_dict=_ble_decode_rlfunc2widget_vi_nmap ;;
   esac
-  if [[ $rlfunc_file ]]; then
-    local dict script='
-      ((${#NAME[@]})) ||
-        ble/util/mapfile NAME < "$rlfunc_file"
-      dict=("${NAME[@]}")
-    '; builtin eval -- "${script//NAME/$rlfunc_dict}"
+  [[ $rlfunc_file ]] || return 1
+  local script='
+    if ((!${#NAME[@]})); then
+      ble/util/mapfile NAME < "$rlfunc_file"
+      [[ $OSTYPE == msys* ]] && NAME=("${NAME[@]%$_ble_term_nl}") # disable=#D2352
+    fi
+    dict=("${NAME[@]}")
+  '; builtin eval -- "${script//NAME/$rlfunc_dict}"
+}
+function ble/builtin/bind/rlfunc2widget {
+  local kmap=$1 rlfunc=$2
+  local IFS=$_ble_term_IFS
+  if ble/builtin/bind/rlfunc2widget/load-dict "$kmap"; then
     local line
     for line in "${dict[@]}"; do
       [[ $line == "$rlfunc "* ]] || continue
-      [[ $OSTYPE == msys* ]] && line=${line%$'\r'}
       local rl widget; ble/bash/read rl widget <<< "$line"
       if [[ $widget == - ]]; then
-        ble/util/print "ble.sh (bind): unsupported readline function '${rlfunc//$q/$Q}' for keymap '$kmap'." >&2
+        ble/builtin/bind/.print-error "unsupported readline function '${rlfunc//$q/$Q}' for keymap '$kmap'."
         return 1
       elif [[ $widget == '<IGNORE>' ]]; then
         return 2
@@ -11962,14 +12186,32 @@ function ble/builtin/bind/rlfunc2widget {
     ret=ble/widget/$rlfunc
     return 0
   fi
-  ble/util/print "ble.sh (bind): unsupported readline function '${rlfunc//$q/$Q}'." >&2
+  ble/builtin/bind/.print-error "unsupported readline function '${rlfunc//$q/$Q}'."
+  return 1
+}
+function ble/builtin/bind/rlfunc2widget/type {
+  local rlfunc=$1 dict
+  if ble/builtin/bind/rlfunc2widget/load-dict "$2"; then
+    local line
+    for line in "${dict[@]}"; do
+      if [[ $line == "$rlfunc "* ]]; then
+        ret=rlfunc
+        return 0
+      fi
+    done
+  fi
+  if ble/is-function ble/widget/"$rlfunc"; then
+    ret=widget
+    return 0
+  fi
+  ret=unknown
   return 1
 }
 function ble/builtin/bind/option:u {
   local rlfunc=$1
   local kmap
   if ! ble/builtin/bind/.initialize-kmap "$opt_keymap" || ! ble/decode/keymap#load "$kmap"; then
-    ble/util/print "ble.sh (bind): sorry, failed to initialize keymap:'$opt_keymap'." >&2
+    ble/builtin/bind/.print-error "sorry, failed to initialize keymap:'$opt_keymap'."
     flags=e$flags
     return 1
   fi
@@ -12021,11 +12263,11 @@ function ble/builtin/bind/option:- {
   local keys value kmap
   if ! ble/builtin/bind/.initialize-keys-and-value "$arg"; then
     local q=\' Q="''\'"
-    ble/util/print "ble.sh (bind): unrecognized readline command '${arg//$q/$Q}'." >&2
+    ble/builtin/bind/.print-error "unrecognized readline command '${arg//$q/$Q}'."
     flags=e$flags
     return 1
   elif ! ble/builtin/bind/.initialize-kmap "$opt_keymap"; then
-    ble/util/print "ble.sh (bind): sorry, failed to initialize keymap:'$opt_keymap'." >&2
+    ble/builtin/bind/.print-error "sorry, failed to initialize keymap:'$opt_keymap'."
     flags=e$flags
     return 1
   fi
@@ -12051,7 +12293,7 @@ function ble/builtin/bind/option:- {
       return 1
     fi
   else
-    ble/util/print "ble.sh (bind): readline function name is not specified ($arg)." >&2
+    ble/builtin/bind/.print-error "readline function name is not specified ($arg)."
     return 1
   fi
 }
@@ -12068,7 +12310,7 @@ function ble/builtin/bind/.process {
            continue ;;
       (--help)
         if ((_ble_bash<40400)); then
-          ble/util/print "ble.sh (bind): unrecognized option $arg" >&2
+          ble/builtin/bind/.print-error "unrecognized option $arg"
           flags=e$flags
         else
           [[ $_ble_decode_bind_state != none ]] &&
@@ -12077,7 +12319,7 @@ function ble/builtin/bind/.process {
         fi
         continue ;;
       (--*)
-        ble/util/print "ble.sh (bind): unrecognized option $arg" >&2
+        ble/builtin/bind/.print-error "unrecognized option $arg"
         flags=e$flags
         continue ;;
       (-*)
@@ -12093,7 +12335,7 @@ function ble/builtin/bind/.process {
             arg=
             if [[ ! $optarg ]]; then
               if (($#==0)); then
-                ble/util/print "ble.sh (bind): missing option argument for -$c" >&2
+                ble/builtin/bind/.print-error "missing option argument for -$c"
                 flags=e$flags
                 break
               fi
@@ -12107,11 +12349,11 @@ function ble/builtin/bind/.process {
             (q) ble/array#push opt_queries "$optarg" ;;
             (f) ble/decode/read-inputrc "$optarg" ;;
             (*)
-              ble/util/print "ble.sh (bind): unsupported option -$c $optarg" >&2
+              ble/builtin/bind/.print-error "unsupported option -$c $optarg"
               flags=e$flags ;;
             esac ;;
           (*)
-            ble/util/print "ble.sh (bind): unrecognized option -$c" >&2
+            ble/builtin/bind/.print-error "unrecognized option -$c"
             flags=e$flags ;;
           esac
         done
@@ -12125,15 +12367,15 @@ function ble/builtin/bind/.process {
     if [[ $opt_print == *[pPsSX]* ]] || ((${#opt_queries[@]})); then
       ( ble/decode/readline/unbind
         [[ -s "$_ble_base_run/$$.bind.save" ]] &&
-          source "$_ble_base_run/$$.bind.save"
+          source -- "$_ble_base_run/$$.bind.save"
         [[ $opt_print ]] &&
-          builtin bind ${opt_keymap:+-m $opt_keymap} -$opt_print
+          builtin bind ${opt_keymap:+-m "$opt_keymap"} -"$opt_print"
         declare rlfunc
         for rlfunc in "${opt_queries[@]}"; do
-          builtin bind ${opt_keymap:+-m $opt_keymap} -q "$rlfunc"
+          builtin bind ${opt_keymap:+-m "$opt_keymap"} -q "$rlfunc"
         done )
     elif [[ $opt_print ]]; then
-      builtin bind ${opt_keymap:+-m $opt_keymap} -$opt_print
+      builtin bind ${opt_keymap:+-m "$opt_keymap"} -"$opt_print"
     fi
   fi
   return 0
@@ -12327,10 +12569,12 @@ function ble/builtin/bind {
   [[ ! $_ble_attached || $_ble_edit_exec_inside_userspace ]] &&
     ble/base/adjust-BASH_REMATCH
   ble/decode/initialize
-  local flags= ext=0
+  local flags= bindx_bash42bug= ext=0
   ble/builtin/bind/.process "$@"
   if [[ $_ble_decode_bind_state == none ]]; then
-    builtin bind "$@"; ext=$?
+    if [[ ! $bindx_bash42bug ]]; then
+      builtin bind "$@"; ext=$?
+    fi
   elif [[ $flags == *[eh]* ]]; then
     [[ $flags == *e* ]] &&
       builtin bind --usage 2>&1 1>/dev/null | ble/bin/grep ^bind >&2
@@ -12353,11 +12597,9 @@ function ble/decode/initialize/.has-broken-suse-inputrc {
     [[ $content == *'SUSE'* ]] || return 1
   return 0
 }
-_ble_decode_initialized=
 _ble_decode_initialize_inputrc=auto
 function ble/decode/initialize {
-  [[ $_ble_decode_initialized ]] && return 0
-  _ble_decode_initialized=1
+  function ble/decode/initialize { return 0; }
   ble/decode/cmap/initialize
   if [[ $_ble_decode_initialize_inputrc == auto ]]; then
     if ble/decode/initialize/.has-broken-suse-inputrc; then
@@ -12399,7 +12641,7 @@ function ble/decode/attach {
   [[ $_ble_decode_bind_state == none ]] && return 1
   ble/term/attach # 3ms
   ble/util/reset-keymap-of-editing-mode
-  builtin eval -- "$(ble/decode/readline/.generate-source-to-unbind-default)" # 21ms
+  ble/util/eval-stdout 'ble/decode/readline/.generate-source-to-unbind-default' # 21ms
   ble/decode/readline/bind # 20ms
   return 0
 }
@@ -12411,7 +12653,7 @@ function ble/decode/detach {
   ble/term/detach
   ble/decode/readline/unbind
   if [[ -s "$_ble_base_run/$$.bind.save" ]]; then
-    source "$_ble_base_run/$$.bind.save"
+    source -- "$_ble_base_run/$$.bind.save"
     >| "$_ble_base_run/$$.bind.save"
   fi
   [[ $_ble_decode_bind_state == "$current_editing_mode" ]] || ble/util/restore-editing-mode current_editing_mode
@@ -12459,7 +12701,7 @@ function ble/encoding:UTF-8/c2bc {
 }
 function ble/encoding:C/generate-binder {
   ble/init:bind/bind-s '"\C-@":"\x9B\x80"'
-  ble/init:bind/bind-s '"\e":"\x9B\x8B"' # isolated ESC (U+07FC) に後で変換
+  ble/init:bind/bind-s '"\e":"\x9B\x8B"' # isolated ESC (U+07BC) に後で変換
   local i ret
   for i in {0..255}; do
     ble/decode/c2dqs "$i"
@@ -12482,7 +12724,7 @@ function ble/encoding:C/decode {
       case $b in
       (155) A[i++]=27 # ESC
             continue ;;
-      (139) A[i++]=2044 # isolated ESC U+07FC
+      (139) A[i++]=1980 # isolated ESC U+07BC
             continue ;;
       (128) A[i++]=0 # C-@
             continue ;;
@@ -12508,12 +12750,14 @@ _ble_color_gflags_Invisible=0x10
 _ble_color_gflags_Strike=0x20
 _ble_color_gflags_Blink=0x40
 _ble_color_gflags_DecorationMask=0x77
-_ble_color_gflags_FgMask=0x00000000FFFFFF00
-_ble_color_gflags_BgMask=0x00FFFFFF00000000
+_ble_color_gflags_FgMask=0x01000000FFFFFF00
+_ble_color_gflags_BgMask=0x02FFFFFF00000000
 _ble_color_gflags_FgShift=8
 _ble_color_gflags_BgShift=32
-_ble_color_gflags_FgIndexed=0x0100000000000000
-_ble_color_gflags_BgIndexed=0x0200000000000000
+_ble_color_gflags_FgTrueColor=0x0100000000000000
+_ble_color_gflags_BgTrueColor=0x0200000000000000
+_ble_color_gflags_FgIndexedColor=0x0000000000010000
+_ble_color_gflags_BgIndexedColor=0x0000010000000000
 _ble_color_index_colors_default=$_ble_term_colors
 if [[ $TERM == xterm* || $TERM == *-256color || $TERM == kterm* ]]; then
   _ble_color_index_colors_default=256
@@ -12561,7 +12805,7 @@ blehook term_DA2R!=ble/color/initialize-term-colors
 function ble/color/palette/.print-indexed-colors {
   local cols=$(((${COLUMNS:-80}-1)/4))
   ((cols<1?(cols=1):(cols>16&&(cols=16))))
-  local bg bg0 bgN ret gflags=$((_ble_color_gflags_BgIndexed|_ble_color_gflags_FgIndexed))
+  local bg bg0 bgN ret gflags=$((_ble_color_gflags_BgIndexedColor|_ble_color_gflags_FgIndexedColor))
   for ((bg0=0;bg0<256;bg0+=cols)); do
     ((bgN=bg0+cols,bgN<256||(bgN=256)))
     for ((bg=bg0;bg<bgN;bg++)); do
@@ -12578,7 +12822,7 @@ function ble/color/palette/.print-indexed-colors {
   return 0
 }
 function ble/color/palette/.print-xterm-256color {
-  local ret gflags=$((_ble_color_gflags_BgIndexed|_ble_color_gflags_FgIndexed))
+  local ret gflags=$((_ble_color_gflags_BgIndexedColor|_ble_color_gflags_FgIndexedColor))
   local l c bg
   for ((l=0;l<2;l++)); do
     for ((c=0;c<16;c++)); do
@@ -12654,22 +12898,22 @@ function ble/color/g2sgr/.impl {
   ((g&_ble_color_gflags_Revert))    && sgr="$sgr;${_ble_term_sgr_rev:-7}"
   ((g&_ble_color_gflags_Invisible)) && sgr="$sgr;${_ble_term_sgr_invis:-8}"
   ((g&_ble_color_gflags_Strike))    && sgr="$sgr;${_ble_term_sgr_strike:-9}"
-  if ((g&_ble_color_gflags_FgIndexed)); then
-    local fg=$((g>>8&0xFF))
-    ble/color/.color2sgrfg "$fg"
-    sgr="$sgr;$ret"
-  elif ((g&_ble_color_gflags_FgMask)); then
+  if ((g&_ble_color_gflags_FgTrueColor)); then
     local rgb=$((1<<24|g>>8&0xFFFFFF))
     ble/color/.color2sgrfg "$rgb"
     sgr="$sgr;$ret"
-  fi
-  if ((g&_ble_color_gflags_BgIndexed)); then
-    local bg=$((g>>32&0xFF))
-    ble/color/.color2sgrbg "$bg"
+  elif ((g&_ble_color_gflags_FgIndexedColor)); then
+    local fg=$((g>>8&0xFF))
+    ble/color/.color2sgrfg "$fg"
     sgr="$sgr;$ret"
-  elif ((g&_ble_color_gflags_BgMask)); then
+  fi
+  if ((g&_ble_color_gflags_BgTrueColor)); then
     local rgb=$((1<<24|g>>32&0xFFFFFF))
     ble/color/.color2sgrbg "$rgb"
+    sgr="$sgr;$ret"
+  elif ((g&_ble_color_gflags_BgIndexedColor)); then
+    local bg=$((g>>32&0xFF))
+    ble/color/.color2sgrbg "$bg"
     sgr="$sgr;$ret"
   fi
   ret=$'\e['$sgr'm'
@@ -12693,21 +12937,21 @@ function ble/color/g2sgr-ansi/.impl {
   ((g&_ble_color_gflags_Revert))    && sgr="$sgr;7"
   ((g&_ble_color_gflags_Invisible)) && sgr="$sgr;8"
   ((g&_ble_color_gflags_Strike))    && sgr="$sgr;9"
-  if ((g&_ble_color_gflags_FgIndexed)); then
-    local fg=$((g>>8&0xFF))
-    sgr="$sgr;38:5:$fg"
-  elif ((g&_ble_color_gflags_FgMask)); then
+  if ((g&_ble_color_gflags_FgTrueColor)); then
     local rgb=$((1<<24|g>>8&0xFFFFFF))
     local R=$((rgb>>16&0xFF)) G=$((rgb>>8&0xFF)) B=$((rgb&0xFF))
     sgr="$sgr;38:2::$R:$G:$B"
+  elif ((g&_ble_color_gflags_FgIndexedColor)); then
+    local fg=$((g>>8&0xFF))
+    sgr="$sgr;38:5:$fg"
   fi
-  if ((g&_ble_color_gflags_BgIndexed)); then
-    local bg=$((g>>32&0xFF))
-    sgr="$sgr;48:5:$bg"
-  elif ((g&_ble_color_gflags_BgMask)); then
+  if ((g&_ble_color_gflags_BgTrueColor)); then
     local rgb=$((1<<24|g>>32&0xFFFFFF))
     local R=$((rgb>>16&0xFF)) G=$((rgb>>8&0xFF)) B=$((rgb&0xFF))
     sgr="$sgr;48:2::$R:$G:$B"
+  elif ((g&_ble_color_gflags_BgIndexedColor)); then
+    local bg=$((g>>32&0xFF))
+    sgr="$sgr;48:5:$bg"
   fi
   ret=$'\e['$sgr'm'
   _ble_color_g2sgr_ansi[$1]=$ret
@@ -12717,40 +12961,32 @@ function ble/color/g2sgr-ansi {
   [[ $ret ]] || ble/color/g2sgr-ansi/.impl "$1"
 }
 function ble/color/g#setfg-clear {
-  (($1&=~(_ble_color_gflags_FgIndexed|_ble_color_gflags_FgMask)))
+  (($1&=~_ble_color_gflags_FgMask))
 }
 function ble/color/g#setbg-clear {
-  (($1&=~(_ble_color_gflags_BgIndexed|_ble_color_gflags_BgMask)))
+  (($1&=~_ble_color_gflags_BgMask))
 }
 function ble/color/g#setfg-index {
   local _ble_local_color=$2
-  (($1=$1&~_ble_color_gflags_FgMask|_ble_color_gflags_FgIndexed|(_ble_local_color&0xFF)<<8)) # index color
+  (($1=$1&~_ble_color_gflags_FgMask|_ble_color_gflags_FgIndexedColor|(_ble_local_color&0xFF)<<8)) # index color
 }
 function ble/color/g#setbg-index {
   local _ble_local_color=$2
-  (($1=$1&~_ble_color_gflags_BgMask|_ble_color_gflags_BgIndexed|(_ble_local_color&0xFF)<<32)) # index color
+  (($1=$1&~_ble_color_gflags_BgMask|_ble_color_gflags_BgIndexedColor|(_ble_local_color&0xFF)<<32)) # index color
 }
 function ble/color/g#setfg-rgb {
   local _ble_local_R=$2
   local _ble_local_G=$3
   local _ble_local_B=$4
   ((_ble_local_R&=0xFF,_ble_local_G&=0xFF,_ble_local_B&=0xFF))
-  if ((_ble_local_R==0&&_ble_local_G==0&&_ble_local_B==0)); then
-    ble/color/g#setfg-index "$1" 16
-  else
-    (($1=$1&~(_ble_color_gflags_FgIndexed|_ble_color_gflags_FgMask)|_ble_local_R<<24|_ble_local_G<<16|_ble_local_B<<8)) # true color
-  fi
+  (($1=$1&~_ble_color_gflags_FgMask|_ble_color_gflags_FgTrueColor|_ble_local_R<<24|_ble_local_G<<16|_ble_local_B<<8)) # true color
 }
 function ble/color/g#setbg-rgb {
   local _ble_local_R=$2
   local _ble_local_G=$3
   local _ble_local_B=$4
   ((_ble_local_R&=0xFF,_ble_local_G&=0xFF,_ble_local_B&=0xFF))
-  if ((_ble_local_R==0&&_ble_local_G==0&&_ble_local_B==0)); then
-    ble/color/g#setbg-index "$1" 16
-  else
-    (($1=$1&~(_ble_color_gflags_BgIndexed|_ble_color_gflags_BgMask)|_ble_local_R<<48|_ble_local_G<<40|_ble_local_B<<32)) # true color
-  fi
+  (($1=$1&~_ble_color_gflags_BgMask|_ble_color_gflags_BgTrueColor|_ble_local_R<<48|_ble_local_G<<40|_ble_local_B<<32)) # true color
 }
 function ble/color/g#setfg-cmyk {
   local _ble_local_C=$2
@@ -12779,11 +13015,7 @@ function ble/color/g#setfg {
   if ((_ble_local_color<0)); then
     ble/color/g#setfg-clear "$1"
   elif ((_ble_local_color>=0x1000000)); then
-    if ((_ble_local_color==0x1000000)); then
-      ble/color/g#setfg-index "$1" 16
-    else
-      (($1=$1&~(_ble_color_gflags_FgIndexed|_ble_color_gflags_FgMask)|(_ble_local_color&0xFFFFFF)<<8)) # true color
-    fi
+    (($1=$1&~_ble_color_gflags_FgMask|_ble_color_gflags_FgTrueColor|(_ble_local_color&0xFFFFFF)<<8)) # true color
   else
     ble/color/g#setfg-index "$1" "$_ble_local_color"
   fi
@@ -12793,26 +13025,24 @@ function ble/color/g#setbg {
   if ((_ble_local_color<0)); then
     ble/color/g#setbg-clear "$1"
   elif ((_ble_local_color>=0x1000000)); then
-    if ((_ble_local_color==0x1000000)); then
-      ble/color/g#setbg-index "$1" 16
-    else
-      (($1=$1&~(_ble_color_gflags_BgIndexed|_ble_color_gflags_BgMask)|(_ble_local_color&0xFFFFFF)<<32)) # true color
-    fi
+    (($1=$1&~_ble_color_gflags_BgMask|_ble_color_gflags_BgTrueColor|(_ble_local_color&0xFFFFFF)<<32)) # true color
   else
     ble/color/g#setbg-index "$1" "$_ble_local_color"
   fi
 }
 function ble/color/g#append {
   local _ble_local_g2=$2
-  ((_ble_local_g2&(_ble_color_gflags_FgMask|_ble_color_gflags_FgIndexed))) &&
-    (($1&=~(_ble_color_gflags_FgMask|_ble_color_gflags_FgIndexed)))
-  ((_ble_local_g2&(_ble_color_gflags_BgMask|_ble_color_gflags_BgIndexed))) &&
-    (($1&=~(_ble_color_gflags_BgMask|_ble_color_gflags_BgIndexed)))
-  (($1|=_ble_local_g2))
+  ((_ble_local_g2&_ble_color_gflags_FgMask)) &&
+    (($1&=~_ble_color_gflags_FgMask))
+  ((_ble_local_g2&_ble_color_gflags_BgMask)) &&
+    (($1&=~_ble_color_gflags_BgMask))
+  (($1|=_ble_local_g2&~_ble_color_gflags_Revert))
+  (($1^=_ble_local_g2&_ble_color_gflags_Revert))
+  return 0
 }
 function ble/color/g#compose {
-  (($1=($2)))
-  local _ble_local_g2
+  local _ble_local_g2=$2
+  (($1=_ble_local_g2))
   for _ble_local_g2 in "${@:3}"; do
     ble/color/g#append "$1" "$_ble_local_g2"
   done
@@ -12831,20 +13061,20 @@ function ble/color/g.append { ble/color/g#append g "$@"; }
 function ble/color/g.compose { ble/color/g#compose g "$@"; }
 function ble/color/g#getfg {
   local g=$1
-  if ((g&_ble_color_gflags_FgIndexed)); then
-    ((ret=g>>8&0xFF))
-  elif ((g&_ble_color_gflags_FgMask)); then
+  if ((g&_ble_color_gflags_FgTrueColor)); then
     ((ret=0x1000000|(g>>8&0xFFFFFF)))
+  elif ((g&_ble_color_gflags_FgIndexedColor)); then
+    ((ret=g>>8&0xFF))
   else
     ((ret=-1))
   fi
 }
 function ble/color/g#getbg {
   local g=$1
-  if ((g&_ble_color_gflags_BgIndexed)); then
-    ((ret=g>>32&0xFF))
-  elif ((g&_ble_color_gflags_BgMask)); then
+  if ((g&_ble_color_gflags_BgTrueColor)); then
     ((ret=0x1000000|(g>>32&0xFFFFFF)))
+  elif ((g&_ble_color_gflags_BgIndexedColor)); then
+      ((ret=g>>32&0xFF))
   else
     ((ret=-1))
   fi
@@ -12893,22 +13123,22 @@ function ble/color/gspec2g {
 }
 function ble/color/g2gspec {
   local g=$1 gspec=
-  if ((g&_ble_color_gflags_FgIndexed)); then
-    local fg=$((g>>8&0xFF))
-    ble/color/.color2name "$fg"
-    gspec=$gspec,fg=$ret
-  elif ((g&_ble_color_gflags_FgMask)); then
+  if ((g&_ble_color_gflags_FgTrueColor)); then
     local rgb=$((1<<24|g>>8&0xFFFFFF))
     ble/color/.color2name "$rgb"
     gspec=$gspec,fg=$ret
+  elif ((g&_ble_color_gflags_FgIndexedColor)); then
+    local fg=$((g>>8&0xFF))
+    ble/color/.color2name "$fg"
+    gspec=$gspec,fg=$ret
   fi
-  if ((g&_ble_color_gflags_BgIndexed)); then
-    local bg=$((g>>32&0xFF))
-    ble/color/.color2name "$bg"
-    gspec=$gspec,bg=$ret
-  elif ((g&_ble_color_gflags_BgMask)); then
+  if ((g&_ble_color_gflags_BgTrueColor)); then
     local rgb=$((1<<24|g>>32&0xFFFFFF))
     ble/color/.color2name "$rgb"
+    gspec=$gspec,bg=$ret
+  elif ((g&_ble_color_gflags_BgIndexedColor)); then
+    local bg=$((g>>32&0xFF))
+    ble/color/.color2name "$bg"
     gspec=$gspec,bg=$ret
   fi
   ((g&_ble_color_gflags_Bold))      && gspec=$gspec,bold
@@ -13861,7 +14091,7 @@ function ble/highlight/layer/update {
   local nlevel=${#_ble_highlight_layer_list[@]}
   for ((LEVEL=0;LEVEL<nlevel;LEVEL++)); do
     layer=${_ble_highlight_layer_list[LEVEL]}
-    "ble/highlight/layer:$layer/update" "$text" "$player"
+    ble/highlight/layer:"$layer"/update "$text" "$player"
     player=$layer
   done
   HIGHLIGHT_BUFF=$PREV_BUFF
@@ -13892,7 +14122,7 @@ function ble/highlight/layer/update/getg {
   g=
   local LEVEL=$LEVEL
   while ((--LEVEL>=0)); do
-    "ble/highlight/layer:${_ble_highlight_layer_list[LEVEL]}/getg" "$1"
+    ble/highlight/layer:"${_ble_highlight_layer_list[LEVEL]}"/getg "$1"
     [[ $g ]] && return 0
   done
   g=0
@@ -13917,17 +14147,9 @@ function ble/highlight/layer:plain/update/.getch {
       ch='^?'
     fi
   else
-    local ret; ble/util/s2c "$ch"
-    local cs=${_ble_unicode_GraphemeCluster_ControlRepresentation[ret]}
-    if [[ $cs ]]; then
-      ch=$cs
-    elif ((ret<0x20)); then
-      ble/util/c2s "$((ret+64))"
-      ch="^$ret"
-    elif ((0x80<=ret&&ret<=0x9F)); then
-      ble/util/c2s "$((ret-64))"
-      ch="M-^$ret"
-    fi
+    local ret
+    ble/util/s2c "$ch"
+    ble/unicode/GraphemeCluster/ControlRepresentation "$ret" && ch=$ret
   fi
 }
 function ble/highlight/layer:plain/update {
@@ -14119,9 +14341,8 @@ function ble/highlight/layer:{selection}/getg {
   local isel=
   if ((olen>=4)); then
     local l=0 u=$((olen-1)) m
-    while ((l+1<u)); do
-      ((osel[m=(l+u)/2]<=index?(l=m):(u=m)))
-    done
+    local L='osel[m=(l+u)/2]<=index?(l=m):(u=m),L[l+1>=u]'
+    ((l+1<u&&L))
     ((l%2&&l+1<olen&&osel[l]==osel[l+1]&&l++))
     ((l%2==0)) && ((isel=l/2))
   else
@@ -14292,7 +14513,7 @@ function ble/util/c2w/clear-cache {
 }
 bleopt/declare -n char_width_mode auto
 function bleopt/check:char_width_mode {
-  if ! ble/is-function "ble/util/c2w:$value"; then
+  if ! ble/is-function ble/util/c2w:"$value"; then
     ble/util/print "bleopt: Invalid value char_width_mode='$value'. A function 'ble/util/c2w:$value' is not defined." >&2
     return 1
   fi
@@ -14309,17 +14530,13 @@ function bleopt/check:char_width_mode {
 function ble/util/c2w {
   ret=${_ble_util_c2w_cache[$1]:-${_ble_util_c2w[$1]}}
   if [[ ! $ret ]]; then
-    "ble/util/c2w:$bleopt_char_width_mode" "$1"
+    ble/util/c2w:"$bleopt_char_width_mode" "$1"
     _ble_util_c2w_cache[$1]=$ret
   fi
 }
 function ble/util/c2w-edit {
-  local cs=${_ble_unicode_GraphemeCluster_ControlRepresentation[$1]}
-  if [[ $cs ]]; then
-    ret=${#cs}
-  elif (($1<32||127<=$1&&$1<160)); then
-    ret=2
-    ((128<=$1&&(ret=4)))
+  if ble/unicode/GraphemeCluster/ControlRepresentation "$1"; then
+    ret=${#ret}
   else
     ble/util/c2w "$1"
   fi
@@ -14335,6 +14552,21 @@ function ble/util/s2w-edit {
 }
 function ble/util/s2w {
   ble/util/s2w-edit "$1" R
+}
+function ble/util/c2s-edit {
+  if ble/unicode/GraphemeCluster/ControlRepresentation "$1"; then
+    if [[ ${2-} ]]; then
+      local cr=$ret sgr0= sgr1=
+      if ble/opts#extract-last-optarg "$2" sgr1 "$_ble_term_rev"; then
+        sgr1=$ret
+        ble/opts#extract-last-optarg "$2" sgr0 "$_ble_term_sgr0"
+        sgr0=$ret
+        ret=$sgr1$cr$sgr0
+      fi
+    fi
+  else
+    ble/util/c2s "$1"
+  fi
 }
 _ble_unicode_c2w_UnicodeVersionCount=19
 _ble_unicode_c2w_UnicodeVersionMapping=(
@@ -14858,14 +15090,8 @@ function ble/unicode/c2w {
     ret=${_ble_unicode_c2w_index[c<0x20000?c>>8:((c>>12)-32+512)]}
     if [[ $ret == *:* ]]; then
       local l=${ret%:*} u=${ret#*:} m
-      while ((l+1<u)); do
-        ((m=(l+u)/2))
-        if ((_ble_unicode_c2w_ranges[m]<=c)); then
-          l=$m
-        else
-          u=$m
-        fi
-      done
+      local L='_ble_unicode_c2w_ranges[m=(l+u)/2]<=c?(l=m):(u=m),L[l+1>=u]'
+      ((l+1<u&&L))
       ret=${_ble_unicode_c2w[_ble_unicode_c2w_ranges[l]]}
     fi
   fi
@@ -15000,8 +15226,7 @@ function bleopt/check:emoji_opts {
   _ble_unicode_EmojiStatus_xIsEmoji='ret'
   [[ :$value: != *:unqualified:* ]] &&
     _ble_unicode_EmojiStatus_xIsEmoji=$_ble_unicode_EmojiStatus_xIsEmoji'&&ret!=_ble_unicode_EmojiStatus_Unqualified'
-  local rex=':min=U\+([0-9a-fA-F]+):'
-  [[ :$value: =~ $rex ]] &&
+  ble/string#match ":$value:" ':min=^U\+([0-9a-fA-F]+):' &&
     _ble_unicode_EmojiStatus_xIsEmoji=$_ble_unicode_EmojiStatus_xIsEmoji'&&code>=0x'${BASH_REMATCH[1]}
   ((_ble_prompt_version++))
   ble/util/c2w/clear-cache
@@ -15014,9 +15239,8 @@ function ble/unicode/EmojiStatus {
     ret=$_ble_unicode_EmojiStatus_None
     if ((_ble_unicode_EmojiStatus_xmaybe)); then
       local l=0 u=${#_ble_unicode_EmojiStatus_ranges[@]} m
-      while ((l+1<u)); do
-        ((_ble_unicode_EmojiStatus_ranges[m=(l+u)/2]<=code?(l=m):(u=m)))
-      done
+      local L='_ble_unicode_EmojiStatus_ranges[m=(l+u)/2]<=code?(l=m):(u=m),L[l+1>=u]'
+      ((l+1<u&&L))
       ret=${_ble_unicode_EmojiStatus[_ble_unicode_EmojiStatus_ranges[l]]:-0}
     fi
     _ble_unicode_EmojiStatus[code]=$ret
@@ -15099,9 +15323,8 @@ function ble/util/c2w:emacs {
     return 0
   fi
   local l=0 u=${#_ble_util_c2w_emacs_wranges[@]} m
-  while ((l+1<u)); do
-    ((_ble_util_c2w_emacs_wranges[m=(l+u)/2]<=tIndex?(l=m):(u=m)))
-  done
+  local L='_ble_util_c2w_emacs_wranges[m=(l+u)/2]<=tIndex?(l=m):(u=m),L[l+1>=u]'
+  ((l+1<u&&L))
   ((ret=((l&1)==0)?2:1))
   return 0
 }
@@ -15158,9 +15381,8 @@ function ble/util/c2w:musl {
     return 0
   fi
   local l=0 u=${#_ble_util_c2w_musl_ranges[@]} m
-  while ((l+1<u)); do
-    ((_ble_util_c2w_musl_ranges[m=(l+u)/2]<=code?(l=m):(u=m)))
-  done
+  local L='_ble_util_c2w_musl_ranges[m=(l+u)/2]<=code?(l=m):(u=m),L[l+1>=u]'
+  ((l+1<u&&L))
   ret=${_ble_util_c2w_musl[_ble_util_c2w_musl_ranges[l]]}
 }
 _ble_util_c2w_auto_update_x0=0
@@ -15469,9 +15691,8 @@ function ble/unicode/GraphemeCluster/c2break {
   [[ $ret ]] && return 0
   ((ret>_ble_unicode_GraphemeClusterBreak_MaxCode)) && { ret=0; return 0; }
   local l=0 u=${#_ble_unicode_GraphemeClusterBreak_ranges[@]} m
-  while ((l+1<u)); do
-    ((_ble_unicode_GraphemeClusterBreak_ranges[m=(l+u)/2]<=code?(l=m):(u=m)))
-  done
+  local L='_ble_unicode_GraphemeClusterBreak_ranges[m=(l+u)/2]<=code?(l=m):(u=m),L[l+1>=u]'
+  ((l+1<u&&L))
   ret=${_ble_unicode_GraphemeClusterBreak[_ble_unicode_GraphemeClusterBreak_ranges[l]]:-0}
   _ble_unicode_GraphemeClusterBreak[code]=$ret
   return 0
@@ -15728,6 +15949,24 @@ function ble/unicode/GraphemeCluster/.get-ascii-rep {
     _ble_unicode_GraphemeCluster_ControlRepresentation[c]=$cs
   fi
 }
+function ble/unicode/GraphemeCluster/ControlRepresentation {
+  if [[ ${_ble_unicode_GraphemeCluster_ControlRepresentation[$1]+set} ]]; then
+    ret=${_ble_unicode_GraphemeCluster_ControlRepresentation[$1]}
+    [[ $ret ]]
+    return "$?"
+  fi
+  if (($1<32||127<=$1&&$1<160)) || {
+       ble/unicode/GraphemeCluster/c2break "$1"
+       ((ret==_ble_unicode_GraphemeClusterBreak_Control)); }; then
+    local cs
+    ble/unicode/GraphemeCluster/.get-ascii-rep "$1"
+    ret=$cs
+    return 0
+  else
+    _ble_unicode_GraphemeCluster_ControlRepresentation[$1]=
+    return 1
+  fi
+}
 function ble/unicode/GraphemeCluster/match {
   local text=$1 iN=${#1} i=$2 j=$2 flags=$3 ret
   if ((i>=iN)); then
@@ -15827,10 +16066,16 @@ function ble/canvas/put.draw {
   DRAW_BUFF[${#DRAW_BUFF[*]}]=$1
 }
 function ble/canvas/put-ind.draw {
-  local count=${1-1} ind=$_ble_term_ind
-  [[ :$2: == *:true-ind:* ]] && ind=$'\eD'
-  local ret; ble/string#repeat "$ind" "$count"
+  local count=${1-1} opts=${2-} x=${3-} ind=$_ble_term_ind
+  ((count>=1)) || return 0
+  [[ :$opts: == *:true-ind:* ]] && ind=$'\eD'
+  local ret=$ind
+  if ((count>=1)); then
+    ble/string#repeat "$ind" "$count"
+  fi
   DRAW_BUFF[${#DRAW_BUFF[*]}]=$ret
+  [[ $x && $ind != $'\eD' ]] &&
+    ble/canvas/put-hpa.draw "$((x+1))" # tput ind が唯の改行の時がある
 }
 function ble/canvas/put-ri.draw {
   local count=${1-1}
@@ -15986,8 +16231,21 @@ function ble/canvas/bflush.draw {
 function ble/canvas/put-clear-lines.draw {
   local old=${1:-1}
   local new=${2:-$old}
-  if ((old==1&&new==1)); then
+  if ((old>=1&&new>=1)); then
     ble/canvas/put.draw "$_ble_term_el2"
+    if ((old==1)); then
+      ble/canvas/put-il.draw "$((new-old))" "$3"
+    else
+      ble/canvas/put-ind.draw 1 '' "$_ble_canvas_x"
+      if ((old==2&&new>=2)); then
+        ble/canvas/put.draw "$_ble_term_el2"
+        ble/canvas/put-il.draw "$((new-2))" "$3"
+      else
+        ble/canvas/put-dl.draw "$((old-1))" "$3"
+        ble/canvas/put-il.draw "$((new-1))" "$3"
+      fi
+      ble/canvas/put-cuu.draw 1
+    fi
   else
     ble/canvas/put-dl.draw "$old" "$3"
     ble/canvas/put-il.draw "$new" "$3"
@@ -16452,9 +16710,7 @@ function ble/canvas/trace/.process-esc-sequence {
         ble/canvas/put-cud.draw 1
     else
       ((y++))
-      ble/canvas/put.draw "$_ble_term_ind"
-      [[ $_ble_term_ind != $'\eD' ]] &&
-        ble/canvas/put-hpa.draw "$((x+1))" # tput ind が唯の改行の時がある
+      ble/canvas/put-ind.draw 1 '' "$x"
     fi
     lc=-1 lg=0
     ble/canvas/trace/.measure-point
@@ -16496,7 +16752,7 @@ function ble/canvas/trace/.impl {
   [[ :$opts: == *:measure-gbox:* ]] && trace_flags=G$trace_flags
   [[ :$opts: == *:left-char:* ]] && trace_flags=L$trace_flags
   local opt_terminfo=; [[ :$opts: == *:terminfo:* ]] && opt_terminfo=1
-  if local rex=':(justify(=[^:]+)?|center|right):'; [[ :$opts: =~ $rex ]]; then
+  if ble/string#match ":$opts:" ':(justify(=[^:]+)?|center|right):'; then
     trace_flags=J$trace_flags
     local jx0=$x jy0=$y
     local justify_sep= justify_align=
@@ -16508,7 +16764,7 @@ function ble/canvas/trace/.impl {
     (right)    justify_align=r ;;
     esac
   fi
-  if local rex=':clip=([0-9]*),([0-9]*)([-+])([0-9]*),([0-9]*):'; [[ :$opts: =~ $rex ]]; then
+  if ble/string#match ":$opts:" ':clip=([0-9]*),([0-9]*)([-+])([0-9]*),([0-9]*):'; then
     local cx1 cy1 cx2 cy2 cx cy cg
     trace_flags=C$trace_flags
     cx1=${BASH_REMATCH[1]} cy1=${BASH_REMATCH[2]}
@@ -16526,9 +16782,9 @@ function ble/canvas/trace/.impl {
   [[ :$opts: == *:ansi:* || $trace_flags == *C*J* ]] &&
     trace_g2sgr=ble/color/g2sgr-ansi
   local opt_g0= opt_sgr0=$_ble_term_sgr0
-  if rex=':g0=([^:]+):'; [[ :$opts: =~ $rex ]]; then
+  if ble/string#match ":$opts:" ':g0=([^:]+):'; then
     opt_g0=${BASH_REMATCH[1]}
-  elif rex=':face0=([^:]+):'; [[ :$opts: =~ $rex ]]; then
+  elif ble/string#match ":$opts:" ':face0=([^:]+):'; then
     ble/color/face2g "${BASH_REMATCH[1]}"; opt_g0=$ret
   fi
   if [[ $opt_g0 ]]; then
@@ -16536,10 +16792,10 @@ function ble/canvas/trace/.impl {
     ble/canvas/put.draw "$opt_sgr0"
     g=$opt_g0
   fi
-  local rex_csi='^\[[ -?]*[@-~]'
+  local rex_csi=$'^\e\\[[ -?]*[@-~]' # disable=#D1440 (LC_COLLATE=C is set)
   local rex_osc='^([]PX^_k])([^'$st']|+[^\'$st'])*(\\|'${st:+'|'}$st'|$)'
-  local rex_2022='^[ -/]+[@-~]'
-  local rex_esc='^[ -~]'
+  local rex_2022=$'^\e[ -/]+[@-~]' # disable=#D1440 (LC_COLLATE=C is set)
+  local rex_esc=$'^\e[ -~]' # disable=#D1440 (LC_COLLATE=C is set)
   local trace_sclevel=0
   local -a trace_brack=()
   local -a trace_scosc=()
@@ -16815,7 +17071,7 @@ function ble/canvas/trace-text {
   if [[ $1 != $glob ]]; then
     ble/canvas/trace-text/.put-simple "${#1}" "$1"
   else
-    local glob='[ -~]*' globx='[! -~]*'
+    local glob='[ -~]*' globx='[! -~]*' # disable=#D1440 (LC_COLLATE=C is set)
     local i iN=${#1} text=$1
     for ((i=0;i<iN;)); do
       local tail=${text:i}
@@ -17504,9 +17760,7 @@ function ble/canvas/panel#clear-after.draw {
   ble/canvas/put.draw "$_ble_term_el"
   local rest_lines=$((height-(y+1)))
   if ((rest_lines)); then
-    ble/canvas/put.draw "$_ble_term_ind"
-    [[ $_ble_term_ind != $'\eD' ]] &&
-      ble/canvas/put-hpa.draw "$((x+1))"
+    ble/canvas/put-ind.draw 1 '' "$x"
     ble/canvas/put-clear-lines.draw "$rest_lines"
     ble/canvas/put-cuu.draw 1
   fi
@@ -17654,7 +17908,7 @@ if ((_ble_bash<40000)); then
     local -a args; args=("$@")
     ble/util/conditional-sync \
       ble/builtin/history/.dump.proc \
-      true 100 progressive-weight:timeout=3000:SIGKILL
+      'builtin true' 100 progressive-weight:timeout=3000:SIGKILL
     local ext=$?
     if ((ext==142)); then
       printf 'ble.sh: timeout: builtin history %s' "$*" >&"$_ble_util_fd_tui_stderr"
@@ -17675,7 +17929,7 @@ fi
 if ((_ble_bash>=50200)); then
   function ble/builtin/history/.get-min {
     if ((${_ble_trap_sig-0}==_ble_builtin_trap_EXIT)); then
-      ble/string#split-words min "$(builtin history | ble/bin/sed -n '1{p;q;}')"
+      ble/string#split-words min "$(builtin history | ble/bin/sed -n '1{p;q;}')" # subshell
     else
       ble/util/assign-words min 'builtin history | ble/bin/sed -n "1{p;q;}"'
     fi
@@ -17721,6 +17975,10 @@ if ((_ble_bash>=40000)); then
     fi
     local -x __ble_rawbytes=$_ble_util_writearray_rawbytes # used by _ble_bin_awk_libES
     local -x fname_stderr=${_ble_edit_io_fname2:-}
+    local -x invalid_timestamp_msg='invalid timestamp'
+    local histfile=${HISTFILE:-$HOME/.bash_history}
+    [[ -s $histfile ]] &&
+      invalid_timestamp_msg=$invalid_timestamp_msg". Please check your history file ($histfile)."
     local apos=\'
     ble/builtin/history/.dump ${arg_count:+"$arg_count"} | ble/bin/awk -v apos="$apos" -v arg_offset="$arg_offset" -v _ble_bash="$_ble_bash" '
       '"$_ble_bin_awk_libES"'
@@ -17733,6 +17991,7 @@ if ((_ble_bash>=40000)); then
           printf("") > INDEX_FILE; # create file
         fname_stderr = ENVIRON["fname_stderr"];
         fname_stderr_count = 0;
+        invalid_timestamp_msg = ENVIRON["invalid_timestamp_msg"];
         n = 0;
         hindex = arg_offset;
       }
@@ -17740,11 +17999,11 @@ if ((_ble_bash>=40000)); then
         if (n < 1) return;
         if (opt_null) {
           if (t ~ /^eval -- \$'"$apos"'([^'"$apos"'\\]|\\.)*'"$apos"'$/)
-            t = es_unescape(substr(t, 11, length(t) - 11));
+            t = es_unescape(substr(t, 11, length(t) - 11)); # disable=#D1440 (\c? is unsed)
           printf("%s%c", t, 0);
         } else if (opt_source) {
           if (t ~ /^eval -- \$'"$apos"'([^'"$apos"'\\]|\\.)*'"$apos"'$/)
-            t = es_unescape(substr(t, 11, length(t) - 11));
+            t = es_unescape(substr(t, 11, length(t) - 11)); # disable=#D1440 (\c? is unsed)
           gsub(/'"$apos"'/, "'"$apos"'\\'"$apos$apos"'", t);
           print "_ble_history[" hindex "]=" apos t apos;
         } else {
@@ -17766,7 +18025,7 @@ if ((_ble_bash>=40000)); then
       function check_invalid_timestamp(line) {
         if (line ~ /^ *[0-9]+\*? +.+: invalid timestamp/ && fname_stderr != "") {
           sub(/^ *0*/, "bash: history !", line);
-          sub(/: invalid timestamp.*$/, ": invalid timestamp", line);
+          sub(/: invalid timestamp.*$/, ": " invalid_timestamp_msg, line);
           if (fname_stderr_count++ == 0)
             print "" >> fname_stderr;
           print line >> fname_stderr;
@@ -17792,16 +18051,15 @@ if ((_ble_bash>=40000)); then
     elif ((_ble_bash<50200)); then
       load_strategy=nlfix
     fi
-    local arg_count= arg_offset=0
-    [[ :$opts: == *:append:* ]] &&
-      arg_offset=${#_ble_history[@]}
-    local rex=':count=([0-9]+):'; [[ :$opts: =~ $rex ]] && arg_count=${BASH_REMATCH[1]}
+    local arg_count= arg_offset=0 ret
+    [[ :$opts: == *:append:* ]] && arg_offset=${#_ble_history[@]}
+    ble/opts#extract-last-optarg "$opts" count && arg_count=$ret
     local history_tmpfile=$_ble_base_run/$$.history.load
     local history_indfile=$_ble_base_run/$$.history.multiline-index
     [[ $opt_async || :$opts: == *:init:* ]] || _ble_history_load_resume=0
     [[ ! $opt_async ]] && ((_ble_history_load_resume<6)) &&
       blehook/invoke history_message "loading history ..."
-    while :; do
+    while ((1)); do
       case $_ble_history_load_resume in
       (0) # 履歴ファイル生成を Background で開始
           if [[ $_ble_history_load_bgpid ]]; then
@@ -17834,7 +18092,7 @@ if ((_ble_bash>=40000)); then
       (3) _ble_history_load_bgpid=
           ((arg_offset==0)) && _ble_history=()
           if [[ $load_strategy == source ]]; then
-            source "$history_tmpfile"
+            source -- "$history_tmpfile"
           elif [[ $load_strategy == nlfix ]]; then
             builtin mapfile -O "$arg_offset" -t _ble_history < "$history_tmpfile"
           else
@@ -17924,10 +18182,10 @@ else
     local opts=$1
     local opt_append=
     [[ :$opts: == *:append:* ]] && opt_append=1
-    local arg_count= rex=':count=([0-9]+):'
-    [[ :$opts: =~ $rex ]] && arg_count=${BASH_REMATCH[1]}
+    local arg_count= ret
+    ble/opts#extract-last-optarg "$opts" count && arg_count=$ret
     blehook/invoke history_message "loading history..."
-    local result=$(ble/history:bash/load/.generate-source)
+    local result=$(ble/history:bash/load/.generate-source) # subshell
     local IFS=$_ble_term_IFS
     if [[ $opt_append ]]; then
       if ((_ble_bash>=30100)); then
@@ -18117,10 +18375,17 @@ if ((_ble_bash>=30100)); then
       ble/util/print : >| "$tmpfile_base.sh"
     fi
   }
+  function ble/history:bash/resolve-multiline/.is-HISTSIZE-unlimited {
+    [[ ${HISTSIZE+set} ]] || return 1
+    ble/string#match "$HISTSIZE" '^[[:space:]]([-+]?[0-9]+)[[:space:]]*$' || return 0
+    local histsize=$((BASH_REMATCH[1]))
+    ((_ble_bash>=40300&&(histize&0x10000000)))
+  }
   function ble/history:bash/resolve-multiline/.load {
     local tmpfile_base=$_ble_base_run/$$.history.mlfix
-    local HISTCONTROL= HISTSIZE= HISTIGNORE=
-    source "$tmpfile_base.sh"
+    ble/history:bash/resolve-multiline/.is-HISTSIZE-unlimited || local HISTSIZE=
+    local HISTCONTROL= HISTIGNORE=
+    source -- "$tmpfile_base.sh"
     ble/history:bash/resolve-multiline/.cleanup
   }
   function ble/history:bash/resolve-multiline.impl {
@@ -18130,7 +18395,7 @@ if ((_ble_bash>=30100)); then
     [[ $opt_async || :$opts: == *:init:* ]] || _ble_history_mlfix_resume=0
     [[ ! $opt_async ]] && ((_ble_history_mlfix_resume<=4)) &&
       blehook/invoke history_message "resolving multiline history ..."
-    while :; do
+    while ((1)); do
       case $_ble_history_mlfix_resume in
       (0) if [[ $opt_async ]] && ble/builtin/history/is-empty; then
             ble/util/idle.wait-user-input
@@ -18194,7 +18459,7 @@ if ((_ble_bash>=30100)); then
     local filename=$1
     local -x tmpfile_base=$_ble_base_run/$$.history.read
     ble/history:bash/resolve-multiline/.awk read < "$filename" &>/dev/null
-    source "$tmpfile_base.part"
+    source -- "$tmpfile_base.part"
     ble/history:bash/resolve-multiline/.cleanup
   }
 else
@@ -18267,7 +18532,7 @@ function ble/builtin/history/.initialize {
     ble/builtin/history/option:r
   fi
   local histfile=${HISTFILE-} rskip=0
-  [[ -e $histfile ]] && rskip=$(ble/bin/wc -l "$histfile" 2>/dev/null)
+  [[ -e $histfile ]] && ble/util/assign rskip 'ble/bin/wc -l "$histfile" 2>/dev/null'
   ble/string#split-words rskip "$rskip"
   local min; ble/builtin/history/.get-min
   local max; ble/builtin/history/.get-max
@@ -18328,16 +18593,15 @@ function ble/builtin/history/.read {
   local file=$1 skip=${2:-0} fetch=$3
   local -x histnew=$_ble_base_run/$$.history.new
   if [[ -s $file ]]; then
-    local script=$(ble/bin/awk -v skip="$skip" '
+    local awk_script='
       BEGIN { histnew = ENVIRON["histnew"]; count = 0; }
       NR <= skip { next; }
       { print $0 >> histnew; count++; }
       END {
         print "ble/builtin/history/.set-rskip \"$file\" " NR;
         print "((_ble_builtin_history_histnew_count+=" count "))";
-      }
-    ' "$file")
-    builtin eval -- "$script"
+      }'
+    ble/util/eval-stdout 'ble/bin/awk -v skip="$skip" "$awk_script" "$file"'
   else
     ble/builtin/history/.set-rskip "$file" 0
   fi
@@ -18594,7 +18858,7 @@ function ble/builtin/history/option:p {
   builtin history -p -- '' &>/dev/null
   ble/util/assign line2 'HISTTIMEFORMAT= builtin history 1'
   if [[ $line1 != "$line2" ]]; then
-    local rex_head='^[[:space:]]*[0-9]+\*?[[:space:]]*'
+    local rex_head='^[[:blank:]]*[0-9]+\*?[[:blank:]]*'
     [[ $line1 =~ $rex_head ]] &&
       line1=${line1:${#BASH_REMATCH}}
     if ((_ble_bash<30100)); then
@@ -18745,7 +19009,7 @@ function ble/builtin/history/erasedups/.impl-awk {
         for (i = 1; i <= n; i++) {
           elem = hist[indices[i]];
           if (elem ~ /^\$'\''.*'\''/)
-            hist[indices[i]] = es_unescape(substr(elem, 3, length(elem) - 3));
+            hist[indices[i]] = es_unescape(substr(elem, 3, length(elem) - 3)); # disable=#D1440 (\c? is unsed)
         }
         n = hist_index - 1;
         hist_index = 0;
@@ -18755,7 +19019,7 @@ function ble/builtin/history/erasedups/.impl-awk {
         for (i = 1; i <= n; i++) {
           elem = edit[indices[i]];
           if (elem ~ /^\$'\''.*'\''/)
-            edit[indices[i]] = es_unescape(substr(elem, 3, length(elem) - 3));
+            edit[indices[i]] = es_unescape(substr(elem, 3, length(elem) - 3)); # disable=#D1440 (\c? is unsed)
         }
         n = edit_index - 1;
         edit_index = 0;
@@ -19102,19 +19366,34 @@ function ble/history/set-edited-entry {
     fi'
   builtin eval -- "${code//PREFIX/${_ble_history_prefix:-_ble}}"
 }
+function ble/history/revert-edits {
+  if [[ $_ble_history_prefix ]]; then
+    local code='
+      local index
+      for index in "${!PREFIX_history_dirt[@]}"; do
+        PREFIX_history_edit[index]=${PREFIX_history[index]}
+      done
+      PREFIX_history_dirt=()
+      local topIndex=${#PREFIX_history[@]}
+      _ble_history_COUNT=$topIndex
+      _ble_history_INDEX=$topIndex'
+    builtin eval -- "${code//PREFIX/$_ble_history_prefix}"
+  else
+    if [[ $_ble_history_load_done ]]; then
+      _ble_history_index=${#_ble_history[@]}
+      ble/history/.update-position
+      local index
+      for index in "${!_ble_history_dirt[@]}"; do
+        _ble_history_edit[index]=${_ble_history[index]}
+      done
+      _ble_history_dirt=()
+      ble-edit/undo/clear-all
+    fi
+  fi
+}
 function ble/history/.add-command-history {
   [[ -o history ]] || ((_ble_bash<30200)) || return 1
   [[ $MC_SID == $$ && $_ble_edit_LINENO -le 2 && ( $1 == *PROMPT_COMMAND=* || $1 == *PS1=* ) ]] && return 1
-  if [[ $_ble_history_load_done ]]; then
-    _ble_history_index=${#_ble_history[@]}
-    ble/history/.update-position
-    local index
-    for index in "${!_ble_history_dirt[@]}"; do
-      _ble_history_edit[index]=${_ble_history[index]}
-    done
-    _ble_history_dirt=()
-    ble-edit/undo/clear-all
-  fi
   if [[ $bleopt_history_share ]]; then
     ble/builtin/history/option:n
     ble/builtin/history/option:s "$1"
@@ -19127,13 +19406,9 @@ function ble/history/.add-command-history {
 function ble/history/add {
   local command=$1
   ((bleopt_history_limit_length>0&&${#command}>bleopt_history_limit_length)) && return 1
+  ble/history/revert-edits
   if [[ $_ble_history_prefix ]]; then
     local code='
-      local index
-      for index in "${!PREFIX_history_dirt[@]}"; do
-        PREFIX_history_edit[index]=${PREFIX_history[index]}
-      done
-      PREFIX_history_dirt=()
       local topIndex=${#PREFIX_history[@]}
       PREFIX_history[topIndex]=$command
       PREFIX_history_edit[topIndex]=$command
@@ -19176,7 +19451,7 @@ function ble/history/isearch-backward-blockwise {
   index=
   local flag_icase=; [[ :$opts: == *:ignore-case:* ]] && flag_icase=1
   local flag_cycled= range_min range_max
-  while :; do
+  while ((1)); do
     if ((i<=start)); then
       range_min=0 range_max=$start
     else
@@ -19247,7 +19522,7 @@ function ble/history/isearch-forward.impl {
     builtin eval "_ble_history_edit=(\"\${${_ble_history_prefix}_history_edit[@]}\")"
   fi
   local flag_icase=; [[ :$opts: == *:ignore-case:* ]] && flag_icase=1
-  while :; do
+  while ((1)); do
     local flag_cycled= expr_cond expr_incr
     if ((has_backward)); then
       if ((index<=start)); then
@@ -19366,7 +19641,7 @@ bleopt/declare -v history_lazyload 1
 bleopt/declare -v delete_selection_mode 1
 bleopt/declare -n indent_offset 4
 bleopt/declare -n indent_tabs 1
-bleopt/declare -v undo_point end
+bleopt/declare -v undo_point auto
 bleopt/declare -n edit_forced_textmap 1
 bleopt/declare -v edit_magic_expand history:sabbrev
 bleopt/declare -v edit_magic_opts ''
@@ -19385,7 +19660,7 @@ function bleopt/check:edit_line_type {
   fi
 }
 function ble/edit/performs-on-graphical-line {
-  [[ $edit_line_type == graphical ]] || return 1
+  [[ $bleopt_edit_line_type == graphical ]] || return 1
   ble/textmap#is-up-to-date && return 0
   ((bleopt_edit_forced_textmap)) || return 1
   ble/widget/.update-textmap
@@ -20411,14 +20686,7 @@ function ble/prompt/.escape {
 }
 function ble/prompt/.get-keymap-for-current-mode {
   ble/prompt/unit/add-hash '$_ble_decode_keymap,${_ble_decode_keymap_stack[*]}'
-  keymap=$_ble_decode_keymap
-  local index=${#_ble_decode_keymap_stack[@]}
-  while :; do
-    case $keymap in (vi_?map|emacs) return 0 ;; esac
-    ((--index<0)) && break
-    keymap=${_ble_decode_keymap_stack[index]}
-  done
-  return 1
+  ble/decode/keymap/get-major-keymap
 }
 function ble/prompt/.uses-builtin-prompt-expansion {
   ((_ble_bash>=40400)) || return 1
@@ -20681,7 +20949,7 @@ else
   function ble/prompt/timeout/check { return 0; }
 fi
 function ble/prompt/update/.has-prompt_command {
-  [[ ${_ble_edit_PROMPT_COMMAND[*]} == *[![:space:]]* ]]
+  [[ ${_ble_edit_PROMPT_COMMAND[*]} == *[!$_ble_term_IFS]* ]]
 }
 function ble/prompt/update/.eval-prompt_command {
   ((${#PROMPT_COMMAND[@]})) || return 0
@@ -20797,9 +21065,9 @@ _ble_prompt_ruler=('' '' 0)
 function ble/prompt/print-ruler.draw {
   [[ $bleopt_prompt_ruler ]] || return 0
   local command=$1 opts=$2 cols=$COLUMNS
-  local rex_eval_prefix='(([!{]|time|if|then|elif|while|until|do|exec|eval|command|env|nice|nohup|xargs|sudo)[[:space:]]+)?'
-  local rex_clear_command='(tput[[:space:]]+)?(clear|reset)'
-  local rex=$'(^|[\n;&|(])[[:space:]]*'$rex_eval_prefix$rex_clear_command'([ \t\n;&|)]|$)'
+  local rex_eval_prefix='(([!{]|time|if|then|elif|while|until|do|exec|eval|command|env|nice|nohup|xargs|sudo)[[:blank:]]+)?'
+  local rex_clear_command='(tput[[:blank:]]+)?(clear|reset)'
+  local rex=$'(^|[\n;&|(])[[:blank:]]*'$rex_eval_prefix$rex_clear_command'([ \t\n;&|)]|$)'
   [[ $command =~ $rex ]] && return 0
   if [[ :$opts: == *:keep-info:* ]]; then
     ble/canvas/panel#increase-height.draw "$_ble_textarea_panel" 1
@@ -20912,6 +21180,10 @@ function ble/edit/info/.construct-content {
     ble/util/print "usage: ble/edit/info/.construct-content type text" >&2 ;;
   esac
 }
+function ble/edit/info/.rendering-enabled {
+  [[ $_ble_attached || -t $_ble_util_fd_tui_stderr ]] || return 1
+  [[ $_ble_app_render_mode == panel ]]
+}
 function ble/edit/info/.render-content {
   local x=$1 y=$2 content=$3 opts=$4
   if [[ $content != "${_ble_edit_info[2]}" ]]; then
@@ -20919,7 +21191,7 @@ function ble/edit/info/.render-content {
     _ble_edit_info_invalidated=1
   fi
   [[ :$opts: == *:defer:* ]] && return 0
-  [[ $_ble_app_render_mode == panel ]] || return 0
+  ble/edit/info/.rendering-enabled || return 0
   ble/edit/info#panel::render "$_ble_edit_info_panel"
 }
 _ble_edit_info_default=(0 0 "")
@@ -20954,23 +21226,39 @@ function ble/edit/info/default {
   return 0
 }
 function ble/edit/info/clear {
-  [[ ${_ble_edit_info[2]} ]] || return 1
-  [[ $_ble_app_render_mode == panel ]] || return 0
   _ble_edit_info_scene=clear
   ble/edit/info/.render-content 0 0 ""
 }
+function ble/edit/info/immediate-clear {
+  if ble/edit/info/.rendering-enabled; then
+    local ret; ble/canvas/panel/save-position; local pos=$ret
+    ble/edit/info/clear
+    ble/canvas/panel/load-position "$pos"
+    ble/util/buffer.flush
+  else
+    ble/edit/info/clear
+  fi
+}
 function ble/edit/info/immediate-show {
-  local ret; ble/canvas/panel/save-position
-  ble/edit/info/show "$@"
-  ble/canvas/panel/load-position "$ret"
-  ble/util/buffer.flush
+  if ble/edit/info/.rendering-enabled; then
+    local ret; ble/canvas/panel/save-position; local pos=$ret
+    ble/edit/info/show "$@"
+    ble/canvas/panel/load-position "$pos"
+    ble/util/buffer.flush
+  else
+    ble/edit/info/show "$@"
+  fi
 }
 function ble/edit/info/immediate-default {
-  local ret; ble/canvas/panel/save-position
-  ble/edit/info/default
-  ble/edit/info/.render-content "${_ble_edit_info_default[@]}"
-  ble/canvas/panel/load-position "$ret"
-  ble/util/buffer.flush
+  if ble/edit/info/.rendering-enabled; then
+    local ret; ble/canvas/panel/save-position; local pos=$ret
+    ble/edit/info/default
+    ble/edit/info/.render-content "${_ble_edit_info_default[@]}"
+    ble/canvas/panel/load-position "$pos"
+    ble/util/buffer.flush
+  else
+    ble/edit/info/default
+  fi
 }
 _ble_edit_VARNAMES=(
   _ble_edit_str
@@ -21243,7 +21531,7 @@ function ble/widget/append-arg-or {
     if [[ $_ble_edit_arg == + ]]; then
       [[ $ch == [-0-9] ]] && _ble_edit_arg=
     elif [[ $_ble_edit_arg == +* ]]; then
-      false
+      builtin false
     elif [[ $_ble_edit_arg ]]; then
       [[ $ch == [0-9] ]]
     else
@@ -21588,11 +21876,11 @@ function ble/textarea#slice-text-buffer {
     ble/color/g2sgr "$g"
     IFS= builtin eval "ret=\"\$ret\${$_ble_textarea_bufferName[*]:i1:i2-i1}\""
     if [[ $_ble_textarea_bufferName == _ble_textarea_buffer ]]; then
-      local out= rex_nl='^(\[[ -?]*[@-~]|[ -/]+[@-~]|[])*'$_ble_term_nl
+      local out= rex_nl=$'^(\e\\[[ -?]*[@-~]|\e[ -/]+[@-~]|[\x0E\x0F])*'$_ble_term_nl # disable=#D1440 (LC_COLLATE=C is set)
       while [[ $ret == *"$_ble_term_cr"* ]]; do
         out=$out${ret%%"$_ble_term_cr"*}
         ret=${ret#*"$_ble_term_cr"}
-        if [[ $ret =~ $rex_nl ]]; then
+        if ble/string#match-safe "$ret" "$rex_nl"; then
           out=$out$_ble_term_nl
         elif [[ ! $ret ]]; then
           if ((i2==iN)); then
@@ -22222,9 +22510,9 @@ function ble/edit/display-version/check:bash-preexec {
   else
     file=" ($file)"
   fi
-  local integ=
-  ble/util/import/is-loaded contrib/bash-preexec && integ=$label_integration
-  ble/edit/display-version/add-line "${sgrF}bash-preexec$sgr0$file, $version$integ"
+  local integ_label=$label_integration_off
+  ble/util/import/is-loaded contrib/integration/bash-preexec && integ_label=$label_integration
+  ble/edit/display-version/add-line "${sgrF}bash-preexec$sgr0$file, $version$integ_label"
 }
 function ble/edit/display-version/check:fzf {
   local source lineno ret
@@ -22235,9 +22523,10 @@ function ble/edit/display-version/check:fzf {
     elif ble/edit/display-version/git-hash-object "$source"; then
       version="($ret)$label_noarch"
     fi
-    local integ=
-    ble/util/import/is-loaded integration/fzf-key-bindings && integ=$label_integration
-    ble/edit/display-version/add-line "${sgrC}fzf$sgr0 ${sgrF}key-bindings$sgr0, $version$integ"
+    local integ= integ_label=$label_integration_off
+    ble/util/import/is-loaded integration/fzf-key-bindings &&
+      integ=1 integ_label=$label_integration
+    ble/edit/display-version/add-line "${sgrC}fzf$sgr0 ${sgrF}key-bindings$sgr0, $version$integ_label"
     [[ $integ ]] || ble/edit/display-version/add-line "$label_warning: fzf integration \"integration/fzf-key-bindings\" is not activated."
   fi
   if ble/function#get-source-and-lineno __fzf_orig_completion; then
@@ -22247,16 +22536,17 @@ function ble/edit/display-version/check:fzf {
     elif ble/edit/display-version/git-hash-object "$source"; then
       version="($ret)$label_noarch"
     fi
-    local integ=
-    ble/util/import/is-loaded integration/fzf-completion && integ=$label_integration
-    ble/edit/display-version/add-line "${sgrC}fzf$sgr0 ${sgrF}completion$sgr0, $version$integ"
+    local integ= integ_label=$label_integration_off
+    ble/util/import/is-loaded integration/fzf-completion &&
+      integ=1 integ_label=$label_integration
+    ble/edit/display-version/add-line "${sgrC}fzf$sgr0 ${sgrF}completion$sgr0, $version$integ_label"
     [[ $integ ]] || ble/edit/display-version/add-line "$label_warning: fzf integration \"integration/fzf-completion\" is not activated."
   fi
 }
 function ble/edit/display-version/check:starship {
   local source lineno
   ble/function#get-source-and-lineno starship_precmd || return 1
-  local starship sed_script='s/^[[:space:]]*PS1="\$(\(.\{1,\}\) prompt .*)";\{0,1\}$/\1/p'
+  local starship sed_script='s/^[[:blank:]]*PS1="\$(\(.\{1,\}\) prompt .*)";\{0,1\}$/\1/p'
   ble/util/assign-array starship 'declare -f starship_precmd | ble/bin/sed -n "$sed_script"'
   if ! ble/bin#has "$starship"; then
     { builtin eval -- "starship=$starship" && ble/bin#has "$starship"; } ||
@@ -22264,8 +22554,8 @@ function ble/edit/display-version/check:starship {
   fi
   local awk_script='
     sub(/^starship /, "") { version = $0; next; }
-    sub(/^branch:/, "") { gsub(/['"$_ble_term_space"']/, "_"); if ($0 != "") version = version "-" $0; next; }
-    sub(/^commit_hash:/, "") { gsub(/['"$_ble_term_space"']/, "_"); if ($0 != "") version = version "+" $0; next; }
+    sub(/^branch:/, "") { gsub(/['"$_ble_term_blank"']/, "_"); if ($0 != "") version = version "-" $0; next; }
+    sub(/^commit_hash:/, "") { gsub(/['"$_ble_term_blank"']/, "_"); if ($0 != "") version = version "+" $0; next; }
     sub(/^build_time:/, "") { build_time = $0; }
     sub(/^build_env:/, "") { build_env = $0; }
     END {
@@ -22368,9 +22658,9 @@ function ble/edit/display-version/check:zoxide {
   [[ $version ]] || return 1
   version=${version#zoxide }
   version=${version#v}
-  local integ=
-  ble/util/import/is-loaded contrib/integration/zoxide && integ=$label_integration
-  ble/edit/display-version/add-line "${sgrF}zoxide${sgr0}, version $sgrV$version$sgr0 ($path)$integ"
+  local integ_label=$label_integration_off
+  ble/util/import/is-loaded contrib/integration/zoxide && integ_label=$label_integration
+  ble/edit/display-version/add-line "${sgrF}zoxide${sgr0}, version $sgrV$version$sgr0 ($path)$integ_label"
 }
 function ble/edit/display-version/check:atuin {
   ble/is-function _atuin_precmd || ble/is-function __atuin_precmd || return 1
@@ -22400,6 +22690,7 @@ function ble/widget/display-shell-version {
   fi
   local label_noarch=" (${sgrA}noarch$sgr0)"
   local label_integration=" $_ble_term_bold(integration: on)$sgr0"
+  local label_integration_off=" $_ble_term_bold(integration: off)$sgr0"
   local label_warning="${bold}WARNING$sgr0"
   local os_release=
   if [[ -s /etc/os-release ]]; then
@@ -22429,7 +22720,7 @@ function ble/widget/display-shell-version {
   ble/edit/display-version/check:atuin
   local q=\'
   local ret='(unset)'
-  local var line=${_ble_term_bold}locale$sgr0:
+  local var line=${bold}locale$sgr0:
   for var in _ble_bash_LANG "${!_ble_bash_LC_@}" LANG "${!LC_@}"; do
     case $var in
     (LC_ALL|LC_COLLATE) continue ;;
@@ -22443,7 +22734,7 @@ function ble/widget/display-shell-version {
   lines[iline++]=$line
   ret='(unset)'
   [[ ${TERM+set} ]] && ble/string#quote-word "$TERM" quote-empty:sgrq="$sgr3":sgr0="$sgr0"
-  local i line="${_ble_term_bold}terminal$sgr0: ${sgr2}TERM$sgrV=$sgr0$ret"
+  local i line="${bold}terminal$sgr0: ${sgr2}TERM$sgrV=$sgr0$ret"
   line="$line ${sgr2}wcwidth$sgrV=$sgr0$bleopt_char_width_version-$bleopt_char_width_mode${bleopt_emoji_width:+/$bleopt_emoji_version-$bleopt_emoji_width+$bleopt_emoji_opts}"
   [[ ${MC_SID-} ]] && line="$line, ${sgrC}mc$sgr0 (${sgrV}MC_SID:$MC_SID$sgr0)"
   for i in "${!_ble_term_DA2R[@]}"; do
@@ -22456,13 +22747,13 @@ function ble/widget/display-shell-version {
     ble/util/assign/mktmp; local tmpfile2=$_ble_local_tmpfile
     "$BASH" --norc --noprofile  -ic 'shopt -po; shopt' >| "$tmpfile1"
     { shopt -po; shopt; } >| "$tmpfile2"
-    local diff awk_script='/^[-+].*[[:space:]]on$/ {print $1} /^[-+]set -o .*$/ {print substr($0,1,1) $3}' IFS=$' \t\n'
+    local diff awk_script='/^[-+].*[[:blank:]]on$/ {print $1} /^[-+]set -o .*$/ {print substr($0,1,1) $3}' IFS=$' \t\n'
     ble/util/assign-words diff 'ble/bin/diff -bwu "$tmpfile1" "$tmpfile2" | ble/bin/awk "$awk_script"'
-    line="${_ble_term_bold}options$sgr0: ${diff[*]}"
+    line="${bold}options$sgr0: ${diff[*]}"
     _ble_local_tmpfile=$tmpfile2 ble/util/assign/rmtmp
     _ble_local_tmpfile=$tmpfile1 ble/util/assign/rmtmp
   else
-    line="${_ble_term_bold}options$sgr0: ${sgr2}SHELLOPTS$sgrV=$sgr0$SHELLOPTS"
+    line="${bold}options$sgr0: ${sgr2}SHELLOPTS$sgrV=$sgr0$SHELLOPTS"
     ((_ble_bash>=40100)) && line="$line, ${sgr2}BASHOPTS$sgrV=$sgr0$BASHOPTS"
   fi
   lines[iline++]=$line
@@ -22509,12 +22800,17 @@ function ble/widget/execute-named-command/accept.hook {
   fi
 }
 function ble/widget/execute-named-command {
+  [[ $_ble_edit_async_read_prefix ]] && return 1
   ble/edit/async-read-mode 'ble/widget/execute-named-command/accept.hook'
   _ble_edit_async_read_before_widget=ble/edit/async-read-mode/empty-cancel.hook
   ble/history/set-prefix _ble_edit_rlfunc
   _ble_edit_PS1='!'
+  _ble_syntax_lang=edit.named-command
+  _ble_highlight_layer_list=(plain syntax region overwrite_mode)
   return 147
 }
+ble/util/autoload "$_ble_base/contrib/syntax/edit.named-command.bash" \
+  ble/syntax:edit.named-command/initialize-ctx
 function ble/widget/overwrite-mode {
   ble-edit/content/clear-arg
   if [[ $_ble_edit_overwrite_mode ]]; then
@@ -22823,17 +23119,41 @@ function ble/widget/.insert-string {
   ))
   _ble_edit_mark_active=
 }
-if [[ -c /dev/clipboard ]]; then
-  function ble/widget/paste-from-clipboard {
-    local clipboard
-    if ! ble/util/readfile clipboard /dev/clipboard; then
-      ble/widget/.bell
-      return 1
-    fi
+function ble/edit/get-clipboard {
+  builtin unset -f "$FUNCNAME"
+  if [[ -c /dev/clipboard ]]; then
+    function ble/edit/get-clipboard { ble/util/readfile clipboard /dev/clipboard; }
+  elif ble/base/is-wsl && ble/bin#freeze-utility-path powershell.exe; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/powershell.exe -command Get-Clipboard 2>/dev/null'; }
+  elif ble/bin#freeze-utility-path pbpaste; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/pbpaste 2>/dev/null'; }
+  elif ble/bin#freeze-utility-path xclip; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/xclip -selection clipboard -o 2>/dev/null'; }
+  elif ble/bin#freeze-utility-path xsel; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/xsel --clipboard --output 2>/dev/null'; }
+  elif ble/bin#freeze-utility-path wxpaste; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/wxpaste 2>/dev/null'; }
+  elif ble/bin#freeze-utility-path xcb; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/xcb -p 0 2>/dev/null'; }
+  elif [[ ${TMUX-} && ${TMUX_PANE-} ]] && ble/bin#freeze-utility-path tmux; then
+    function ble/edit/get-clipboard { ble/util/assign clipboard 'ble/bin/tmux save-buffer - 2>/dev/null'; }
+  elif [[ ${STY-} && ${WINDOW-} ]] && ble/bin#freeze-utility-path screen; then
+    function ble/edit/get-clipboard { ble/util/readfile clipboard /tmp/screen-exchange; }
+  else
+    function ble/edit/get-clipboard { return 1; }
+  fi
+  ble/edit/get-clipboard "$@"
+}
+function ble/widget/paste-from-clipboard {
+  local clipboard
+  if ble/edit/get-clipboard; then
     ble/widget/insert-string "$clipboard"
     return 0
-  }
-fi
+  else
+    ble/widget/.bell
+    return 1
+  fi
+}
 _ble_edit_lastarg_index=
 _ble_edit_lastarg_delta=
 _ble_edit_lastarg_nth=
@@ -22845,7 +23165,7 @@ function ble/widget/insert-arg.impl {
   local decl=$(
     local original=${_ble_edit_str:beg:end-beg}
     local count=; ((delta>0)) && count=_ble_history_COUNT
-    while :; do
+    while ((1)); do
       if ((delta>0)); then
         ((index+1>=count)) && break
         ((index+=delta,delta=1))
@@ -23559,15 +23879,23 @@ function ble/widget/kill-logical-line {
   ((bol<eol)) && ble/widget/.kill-range "$bol" "$eol"
 }
 function ble/widget/forward-history-line.impl {
-  local arg=$1
+  local arg=$1 opts=$2
   ((arg==0)) && return 0
-  local rest=$((arg>0?arg:-arg))
   if ((arg>0)); then
     if [[ ! $_ble_history_prefix && ! $_ble_history_load_done ]]; then
+      _ble_edit_ind=${#_ble_edit_str}
       ble/widget/.bell 'end of history'
       return 1
     fi
   fi
+  local point_opts point point_x
+  if ((arg>0)); then
+    opts=$opts:linewise:forward
+  else
+    opts=$opts:linewise:backward
+  fi
+  ble-edit/history/goto/.prepare-point "$opts"
+  local rest=$((arg>0?arg:-arg))
   ble/history/initialize
   local index=$_ble_history_INDEX
   local expr_next='--index>=0'
@@ -23577,31 +23905,27 @@ function ble/widget/forward-history-line.impl {
   fi
   while ((expr_next)); do
     if ((--rest<=0)); then
-      ble-edit/history/goto "$index" # 位置は goto に任せる
-      return "$?"
+      ble-edit/history/goto "$index" point=none
+      ble-edit/history/goto/.set-point 0
+      return 0
     fi
     local entry; ble/history/get-edited-entry "$index"
     if [[ $entry == *$'\n'* ]]; then
       local ret; ble/string#count-char "$entry" $'\n'
       if ((rest<=ret)); then
-        ble-edit/history/goto "$index"
-        if ((arg>0)); then
-          ble-edit/content/find-logical-eol 0 "$rest"
-        else
-          ble-edit/content/find-logical-eol "${#entry}" "$((-rest))"
-        fi
-        _ble_edit_ind=$ret
+        ble-edit/history/goto "$index" point=none
+        ble-edit/history/goto/.set-point "$rest"
         return 0
       fi
       ((rest-=ret))
     fi
   done
   if ((arg>0)); then
-    ble-edit/history/goto "$count"
+    ble-edit/history/goto "$count" point=none
     _ble_edit_ind=${#_ble_edit_str}
     ble/widget/.bell 'end of history'
   else
-    ble-edit/history/goto 0
+    ble-edit/history/goto 0 point=none
     _ble_edit_ind=0
     ble/widget/.bell 'beginning of history'
   fi
@@ -23635,16 +23959,16 @@ function ble/widget/forward-logical-line.impl {
     ((_ble_edit_ind=dst<eol2?dst:eol2))
     return 0
   fi
+  if [[ :$opts: == *:history:* && ! $_ble_edit_mark_active ]]; then
+    ble/widget/forward-history-line.impl "$arg" logical
+    return "$?"
+  fi
   if ((arg>0)); then
     ble-edit/content/find-logical-eol "$bol2"
   else
     ret=$bol2
   fi
   _ble_edit_ind=$ret
-  if [[ :$opts: == *:history:* && ! $_ble_edit_mark_active ]]; then
-    ble/widget/forward-history-line.impl "$arg"
-    return "$?"
-  fi
   if ((arg>0)); then
     ble/widget/.bell 'end of string'
   else
@@ -23662,7 +23986,7 @@ function ble/widget/backward-logical-line {
   local arg; ble-edit/content/get-arg 1
   ble/widget/forward-logical-line.impl "$((-arg))" "$opts"
 }
-function ble/keymap:emacs/find-graphical-eol {
+function ble-edit/content/find-graphical-eol {
   local axis=${1:-$_ble_edit_ind} arg=${2:-0}
   local x y index
   ble/textmap#getxy.cur "$axis"
@@ -23685,7 +24009,7 @@ function ble/widget/beginning-of-graphical-line {
 function ble/widget/end-of-graphical-line {
   ble/textmap#is-up-to-date || ble/widget/.update-textmap
   local arg; ble-edit/content/get-arg 1
-  local ret; ble/keymap:emacs/find-graphical-eol "$_ble_edit_ind" "$((arg-1))"
+  local ret; ble-edit/content/find-graphical-eol "$_ble_edit_ind" "$((arg-1))"
   _ble_edit_ind=$ret
 }
 function ble/widget/kill-backward-graphical-line {
@@ -23698,7 +24022,7 @@ function ble/widget/kill-backward-graphical-line {
     ((index==_ble_edit_ind&&index>0&&index--))
     ble/widget/.kill-range "$index" "$_ble_edit_ind"
   else
-    local ret; ble/keymap:emacs/find-graphical-eol "$_ble_edit_ind" "$((-arg))"
+    local ret; ble-edit/content/find-graphical-eol "$_ble_edit_ind" "$((-arg))"
     ble/widget/.kill-range "$ret" "$_ble_edit_ind"
   fi
 }
@@ -23729,20 +24053,25 @@ function ble/widget/forward-graphical-line.impl {
   ble/textmap#is-up-to-date || ble/widget/.update-textmap
   local arg=$1 opts=$2
   ((arg==0)) && return 0
+  local old_edit_ind=$_ble_edit_ind
   local x y index ax ay
   ble/textmap#getxy.cur "$_ble_edit_ind"
   ble/textmap#get-index-at "$x" "$((y+arg))"
   ble/textmap#getxy.cur --prefix=a "$index"
   ((arg-=ay-y))
-  _ble_edit_ind=$index # 何れにしても移動は行う
-  ((arg==0)) && return 0
+  if ((arg==0)); then
+    _ble_edit_ind=$index
+    return 0
+  fi
   if [[ :$opts: == *:history:* && ! $_ble_edit_mark_active ]]; then
-    ble/widget/forward-history-line.impl "$arg"
+    ble/widget/forward-history-line.impl "$arg" graphical
     return "$?"
   fi
   if ((arg>0)); then
+    _ble_edit_ind=${#_ble_edit_str}
     ble/widget/.bell 'end of string'
   else
+    _ble_edit_ind=0
     ble/widget/.bell 'beginning of string'
   fi
   return 0
@@ -25008,6 +25337,7 @@ function ble/widget/discard-line {
   [[ $bleopt_history_share ]] && ble/builtin/history/option:n
   _ble_edit_line_disabled=1 ble/textarea#render leave
   ble/widget/.newline keep-info
+  ble/history/revert-edits
   ble/textarea#render
 }
 function ble/edit/histexpand/run {
@@ -25227,26 +25557,37 @@ function ble/widget/default/accept-single-line-or {
 function ble/widget/accept-single-line-or-newline {
   ble/widget/accept-single-line-or newline
 }
+function ble/widget/edit-and-execute-command.editor {
+  ret=${bleopt_editor:-${VISUAL:-${EDITOR-}}}
+  [[ $ret ]] && return 0
+  local -a editors=()
+  if [[ :$opts: == *:vi:* ]] && ble/bin#has vim; then
+    editors=(vim vi emacs nano)
+  elif [[ :$opts: == *:emacs:* ]]; then
+    editors=(emacs nano vim vi)
+  else
+    editors=(emacs vim nano vi)
+  fi
+  for ret in "${editors[@]}"; do
+    ble/bin#has "$ret" && return 0
+  done
+  ret=vi
+  return 1
+}
 function ble/widget/edit-and-execute-command.edit {
   local content=$1 opts=:$2:
   local file=$_ble_base_run/$$.blesh-fc.bash
   ble/util/print "$content" >| "$file"
-  local fallback=vi
-  if ble/bin#has emacs; then
-    fallback='emacs -nw'
-  elif ble/bin#has vim; then
-    fallback=vim
-  elif ble/bin#has nano; then
-    fallback=nano
-  fi
-  if [[ $opts != *:no-newline:* ]]; then
+  ble/widget/edit-and-execute-command.editor; local editor=$ret
+  if [[ :$opts: != *:no-newline:* ]]; then
     _ble_edit_line_disabled=1 ble/textarea#render leave
     ble/widget/.newline # #D1800 (呼び出し元で exec/register)
   fi
   ble/term/leave
-  ${bleopt_editor:-${VISUAL:-${EDITOR:-$fallback}}} "$file"; local ext=$?
+  builtin eval -- "$editor"' "$file"'; local ext=$?
   ble/term/enter
   if ((ext)); then
+    ret=
     ble/widget/.bell
     return 127
   fi
@@ -25255,7 +25596,7 @@ function ble/widget/edit-and-execute-command.edit {
 }
 function ble/widget/edit-and-execute-command.impl {
   local ret=
-  ble/widget/edit-and-execute-command.edit "$1"
+  ble/widget/edit-and-execute-command.edit "$1" "$2"
   local command=$ret
   ble/string#match "$command" $'[\n]+$' &&
     command=${command::${#command}-${#BASH_REMATCH}}
@@ -25271,7 +25612,7 @@ function ble/widget/edit-and-execute-command.impl {
 }
 function ble/widget/edit-and-execute-command {
   ble-edit/content/clear-arg
-  ble/widget/edit-and-execute-command.impl "$_ble_edit_str"
+  ble/widget/edit-and-execute-command.impl "$_ble_edit_str" "$1"
 }
 function ble/widget/insert-comment/.remove-comment {
   local comment_begin=$1
@@ -25483,15 +25824,35 @@ function ble-edit/undo/.get-current-state {
 function ble-edit/undo/add {
   ble-edit/undo/.check-hindex
   local str ind; ble-edit/undo/.get-current-state
-  [[ $str == "$_ble_edit_str" ]] && return 0
-  _ble_edit_undo[_ble_edit_undo_index++]=$_ble_edit_ind:$_ble_edit_str
-  if ((${#_ble_edit_undo[@]}>_ble_edit_undo_index)); then
-    _ble_edit_undo=("${_ble_edit_undo[@]::_ble_edit_undo_index}")
+  if [[ $_ble_edit_str != "$str" ]]; then
+    _ble_edit_undo[_ble_edit_undo_index++]=$_ble_edit_ind:$_ble_edit_str
+    if ((${#_ble_edit_undo[@]}>_ble_edit_undo_index)); then
+      _ble_edit_undo=("${_ble_edit_undo[@]::_ble_edit_undo_index}")
+    fi
+  elif ((_ble_edit_undo_index>0&&_ble_edit_ind!=${ind##*,})); then
+    _ble_edit_undo[_ble_edit_undo_index-1]=${ind%%,*},$_ble_edit_ind:$_ble_edit_str
   fi
 }
 function ble-edit/undo/.load {
+  local point=$bleopt_undo_point
+  case $point in
+  (beg|end|first|last|near) ;;
+  (auto|*)
+    if local keymap; ble/decode/keymap/get-major-keymap; [[ $keymap == vi_[noxs]map ]]; then
+      point=near
+    else
+      point=beg
+    fi ;;
+  esac
+  if [[ $point == near ]]; then
+    if [[ :$1: == *:redo:* ]]; then
+      point=first
+    else
+      point=last
+    fi
+  fi
   local str ind; ble-edit/undo/.get-current-state
-  if [[ $bleopt_undo_point == end || $bleopt_undo_point == beg ]]; then
+  if [[ $point == end || $point == beg ]]; then
     local old=$_ble_edit_str new=$str ret
     if [[ $bleopt_undo_point == end ]]; then
       ble/string#common-suffix "${old:_ble_edit_ind}" "$new"; local s1=${#ret}
@@ -25514,10 +25875,20 @@ function ble-edit/undo/.load {
     ble-edit/content/replace "$beg" "$end0" "${str:beg:end-beg}"
     if [[ $bleopt_undo_point == end ]]; then
       ind=$end
+      if ((beg<end)); then
+        local keymap
+        ble/decode/keymap/get-major-keymap
+        [[ $keymap == vi_nmap ]] && ((end--))
+      fi
     else
       ind=$beg
     fi
   else
+    if [[ $point == first ]]; then
+      ind=${ind%%,*}
+    else
+      ind=${ind##*,}
+    fi
     ble-edit/content/reset-and-check-dirty "$str"
   fi
   _ble_edit_ind=$ind
@@ -25540,7 +25911,7 @@ function ble-edit/undo/redo {
   ((_ble_edit_undo_index<ucount)) || return 1
   ((_ble_edit_undo_index+=arg))
   ((_ble_edit_undo_index>=ucount&&(_ble_edit_undo_index=ucount)))
-  ble-edit/undo/.load
+  ble-edit/undo/.load redo
 }
 function ble-edit/undo/revert {
   ble-edit/undo/.check-hindex
@@ -25559,10 +25930,22 @@ function ble-edit/undo/revert-toggle {
     ble-edit/undo/.load
   elif ((${#_ble_edit_undo[@]})); then
     ((_ble_edit_undo_index=${#_ble_edit_undo[@]}))
-    ble-edit/undo/.load
+    ble-edit/undo/.load redo
   else
     return 1
   fi
+}
+function ble/widget/undo {
+  local arg; ble-edit/content/get-arg 1
+  ble-edit/undo/undo "$arg" || ble/widget/.bell 'no more older undo history'
+}
+function ble/widget/redo {
+  local arg; ble-edit/content/get-arg 1
+  ble-edit/undo/redo "$arg" || ble/widget/.bell 'no more recent undo history'
+}
+function ble/widget/revert {
+  local arg; ble-edit/content/clear-arg
+  ble-edit/undo/revert
 }
 _ble_edit_kbdmacro_record=
 _ble_edit_kbdmacro_last=()
@@ -25629,7 +26012,30 @@ function ble/widget/print-keyboard-macro {
     ble/keymap:vi/adjust-command-mode
   return 0
 }
-bleopt/declare -v history_preserve_point ''
+bleopt/declare -v history_default_point 'auto'
+function bleopt/check:history_default_point {
+  case $value in
+  (begin|end|near|far|preserve|auto) return 0 ;;
+  (beginning-of-line|end-of-line|preserve-column) return 0 ;;
+  (beginning-of-logical-line|end-of-logical-line|preserve-logical-column) return 0 ;;
+  (beginning-of-graphical-line|end-of-graphical-line|preserve-graphical-column) return 0;;
+  (*)
+    ble/util/print "bleopt: Unrecognized value history_default_point='$value'." >&2
+    return 1
+  esac
+}
+bleopt/declare -o history_preserve_point history_default_point
+function bleopt/check:history_preserve_point {
+  case $value in
+  (begin|end|near|far|preserve|auto) ;;
+  (beginning-of-line|end-of-line|preserve-column) ;;
+  (beginning-of-logical-line|end-of-logical-line|preserve-logical-column) ;;
+  (beginning-of-graphical-line|end-of-graphical-line|preserve-graphical-column) ;;
+  ('') value=end ;;
+  (*) value=preserve ;;
+  esac
+  bleopt/declare/.check-renamed-option history_preserve_point history_default_point
+}
 function ble-edit/history/goto {
   ble/history/initialize
   local histlen=$_ble_history_COUNT
@@ -25650,30 +26056,151 @@ function ble-edit/history/goto {
       local histlen2=$_ble_history_COUNT
       if ((histlen!=histlen2)); then
         ble/textarea#invalidate
-        ble-edit/history/goto "$((index1==histlen?histlen:index1))"
+        ble-edit/history/goto "$((index1==histlen?histlen:index1))" "$2"
         return "$?"
       fi
     fi
   fi
   ble/history/set-edited-entry "$index0" "$_ble_edit_str"
   ble/history/onleave.fire
+  local opts=$2
+  if ((index1>=index0)); then
+    opts=$opts:forward
+  else
+    opts=$opts:backward
+  fi
+  local point point_x point_opts
+  ble-edit/history/goto/.prepare-point "$opts"
   ble/history/set-index "$index1"
   local entry; ble/history/get-edited-entry -v entry "$index1"
   ble-edit/content/reset "$entry" history
-  if [[ $bleopt_history_preserve_point ]]; then
-    if ((_ble_edit_ind>${#_ble_edit_str})); then
-      _ble_edit_ind=${#_ble_edit_str}
-    fi
-  else
-    if ((index1<index0)); then
-      _ble_edit_ind=${#_ble_edit_str}
-    else
-      local first_line=${_ble_edit_str%%$'\n'*}
-      _ble_edit_ind=${#first_line}
-    fi
-  fi
+  _ble_edit_ind=0
   _ble_edit_mark=0
   _ble_edit_mark_active=
+  ble-edit/history/goto/.set-point
+}
+function ble-edit/history/goto/.prepare-point {
+  point_opts=$1
+  point_x=
+  local ret
+  ble/opts#extract-last-optarg "$point_opts" point
+  [[ $ret ]] || ret=$bleopt_history_default_point
+  point=$ret
+  if [[ $point == auto ]]; then
+    ble/opts#extract-last-optarg "$point_opts" default-point
+    if [[ $ret ]]; then
+      point=$ret
+    else
+      point=end
+    fi
+  fi
+  case $point in
+  (near)
+    if [[ :$point_opts: == *:backward:* ]]; then
+      point=end
+    else
+      point=begin
+    fi ;;
+  (far)
+    if [[ :$point_opts: == *:backward:* ]]; then
+      point=begin
+    else
+      point=end
+    fi ;;
+  esac
+  if [[ :$point_opts: == *:linewise:* ]]; then
+    case $point in
+    (begin) point=beginning-of-line ;;
+    (end) point=end-of-line ;;
+    (preserve) point=preserve-column ;;
+    esac
+  fi
+  case $point in
+  (end-of-line|beginning-of-line|preserve-column)
+    local prefix
+    if [[ :$point_opts: == *:graphical:* ]]; then
+      prefix=graphical
+    elif [[ :$point_opts: == *:logical:* ]]; then
+      prefix=logical
+    elif [[ $bleopt_edit_line_type == graphical ]]; then
+      prefix=graphical
+    else
+      prefix=logical
+    fi
+    point=${point%-*}-$prefix-${point##*-} ;;
+  esac
+  case $point in
+  (preserve)
+    point_x=$_ble_edit_ind ;;
+  (preserve-logical-column)
+    point_x=${_ble_edit_str::_ble_edit_ind}
+    point_x=${point_x##*$'\n'}
+    point_x=${#point_x} ;;
+  (preserve-graphical-column)
+    ble/textmap#is-up-to-date || ble/widget/.update-textmap
+    local x y
+    ble/textmap#getxy.cur "$_ble_edit_ind"
+    point_x=$x ;;
+  (beginning-of-logical-line)
+    point=preserve-logical-column
+    point_x=0 ;;
+  (beginning-of-graphical-line)
+    point=preserve-graphical-column
+    point_x=0 ;;
+  esac
+}
+function ble-edit/history/goto/.set-point {
+  local delta=${1:-0} ret
+  case $point in
+  (begin)
+    _ble_edit_ind=0 ;;
+  (end)
+    _ble_edit_ind=${#_ble_edit_str} ;;
+  (end-of-logical-line)
+    if [[ :$point_opts: == *:backward:* ]]; then
+      ble-edit/content/find-logical-eol "${#_ble_edit_str}" "$((-delta))"
+    else
+      ble-edit/content/find-logical-eol 0 "$delta"
+    fi
+    _ble_edit_ind=$ret ;;
+  (end-of-graphical-line)
+    ble/textmap#is-up-to-date || ble/widget/.update-textmap
+    if [[ :$point_opts: == *:backward:* ]]; then
+      ble-edit/content/find-graphical-eol "${#_ble_edit_str}" "$((-delta))"
+    else
+      ble-edit/content/find-graphical-eol "$index" "$delta"
+    fi
+    _ble_edit_ind=$ret ;;
+  (preserve)
+    _ble_edit_ind=$point_x
+    if ((_ble_edit_ind>${#_ble_edit_str})); then
+      _ble_edit_ind=${#_ble_edit_str}
+    fi ;;
+  (preserve-logical-column)
+    if [[ :$point_opts: == *:backward:* ]]; then
+      ble-edit/content/find-logical-bol 0 "$delta"; local beg=$ret
+    else
+      ble-edit/content/find-logical-bol "${#_ble_edit_str}" "$((-delta))"; local beg=$ret
+    fi
+    _ble_edit_ind=$beg
+    if ((point_x)); then
+      ((_ble_edit_ind+=point_x))
+      ble-edit/content/find-logical-eol "$beg"
+      ((_ble_edit_ind>ret)) && _ble_edit_ind=$ret
+    fi ;;
+  (preserve-graphical-column)
+    ble/textmap#is-up-to-date || ble/widget/.update-textmap
+    if [[ :$point_opts: == *:backward:* ]]; then
+      local x y
+      ble/textmap#getxy.cur "${#_ble_edit_str}"
+      ((y-=delta))
+    else
+      local y=$delta
+    fi
+    local index
+    ble/textmap#get-index-at "$point_x" "$y"
+    _ble_edit_ind=$index ;;
+  esac
 }
 function ble-edit/history/history-message.hook {
   ((_ble_edit_attached)) || return 1
@@ -25945,7 +26472,7 @@ function ble-edit/isearch/search {
   return 1
 }
 function ble-edit/isearch/.shift-backward-references {
-    local rex_cc='\[[@][^]@]+[@]\]' # [:space:] [=a=] [.a.] など。
+    local rex_cc='\[[@][^]@]+[@]\]' # [:blank:] [=a=] [.a.] など。
     local rex_bracket_expr='\[\^?]?('${rex_cc//@/:}'|'${rex_cc//@/=}'|'${rex_cc//@/.}'|[^][]|\[[^]:=.])*\[?\]'
     local rex='^('$rex_bracket_expr'|\\[^1-8])*\\[1-8]'
     local buff=
@@ -26274,7 +26801,7 @@ function ble/widget/isearch/cancel {
     if ((${#_ble_edit_isearch_arr[@]})); then
       local step
       ble/string#split step : "${_ble_edit_isearch_arr[0]}"
-      ble-edit/history/goto "${step[0]}"
+      ble-edit/history/goto "${step[0]}" point=none
     fi
     ble/widget/isearch/exit.impl
     _ble_edit_ind=${_ble_edit_isearch_save[1]}
@@ -26414,7 +26941,7 @@ function ble-edit/nsearch/.goto-match {
       ble-edit/content/reset-and-check-dirty "$left$line$right"
     fi
   else
-    ble-edit/history/goto "$index"
+    ble-edit/history/goto "$index" point=none
     line=$_ble_edit_str
   fi
   local s=$line n=$needle
@@ -26429,10 +26956,9 @@ function ble-edit/nsearch/.goto-match {
   _ble_edit_nsearch_match=$index
   _ble_edit_nsearch_index=$index
   _ble_edit_mark=$beg
-  local is_end_marker=
-  local rex=':point=([^:]*):'
-  [[ :$opts: =~ $rex ]]
-  case ${BASH_REMATCH[1]} in
+  local is_end_marker= ret=
+  ble/opts#extract-last-optarg "$opts" point
+  case $ret in
   (begin)       _ble_edit_ind=0 ;;
   (end)         _ble_edit_ind=${#line} is_end_marker=1 ;;
   (match-begin) _ble_edit_ind=$beg ;;
@@ -26471,7 +26997,7 @@ function ble-edit/nsearch/.search.fib {
       if [[ $_ble_edit_nsearch_loadctx ]]; then
         ble-edit/content/reset-and-check-dirty "$line"
       else
-        ble-edit/history/goto "${record[1]}"
+        ble-edit/history/goto "${record[1]}" point=none
       fi
       _ble_edit_nsearch_match=${record[1]}
       _ble_edit_nsearch_index=${record[1]}
@@ -26568,7 +27094,7 @@ function ble-edit/nsearch/action:load-command/initialize {
   [[ $_ble_syntax_lang == bash ]] || return 1
   ble-edit/content/update-syntax
   local pos=$_ble_edit_ind
-  ble/string#match "${_ble_edit_str:pos}" $'^[ \t]+[^[:space:]]' &&
+  ble/string#match "${_ble_edit_str:pos}" $'^[ \t]+[^ \t\n]' &&
     ((pos+=${#BASH_REMATCH}-1))
   local comp_cword comp_words comp_line comp_point tree_words
   if ble/syntax:bash/extract-command "$pos" treeinfo && ((${#tree_words[@]})); then
@@ -26579,7 +27105,7 @@ function ble-edit/nsearch/action:load-command/initialize {
     local beg=$wbeg end=${tree_words[${#tree_words[@]}-1]%:*}
     ble/string#match "${_ble_edit_str:end}" $'^[ \t]+($|\n)' &&
       ((end+=${#BASH_REMATCH}))
-    if ((_ble_edit_ind<=end)) || { ble/string#match "${_ble_edit_str:end:_ble_edit_ind-end}" $'^[[:space:]\n]+$' && end=$_ble_edit_ind; }; then
+    if ((_ble_edit_ind<=end)) || { ble/string#match "${_ble_edit_str:end:_ble_edit_ind-end}" $'^[[:blank:]\n]+$' && end=$_ble_edit_ind; }; then
       if ((beg>=0&&beg<end)); then
         ((_ble_edit_ind<beg)) && _ble_edit_ind=$beg
         _ble_edit_nsearch_loadctx=("$beg" "${_ble_edit_str::beg}" "${_ble_edit_str:end}")
@@ -26589,10 +27115,10 @@ function ble-edit/nsearch/action:load-command/initialize {
   fi
   local ret stat
   if ble/syntax/completion-context/.search-last-istat "$_ble_edit_ind" &&
-     ble/string#match "${_ble_edit_str:ret:_ble_edit_ind-ret}" '^[[:space:]]*$'
+     ble/string#match "${_ble_edit_str:ret:_ble_edit_ind-ret}" '^[[:blank:]]*$'
   then
     ble/string#split-words stat "${_ble_syntax_stat[ret]}"
-    if [[ ${_ble_syntax_bash_complete_check_prefix[stat[0]]} == next-command ]]; then
+    if [[ ${_ble_syntax_completion_context_check_prefix[stat[0]]} == next-command ]]; then
       _ble_edit_nsearch_loadctx=("$_ble_edit_ind" "${_ble_edit_str::_ble_edit_ind}" "${_ble_edit_str:_ble_edit_ind}")
       return 0
     fi
@@ -26642,8 +27168,7 @@ function ble/widget/history-search {
   _ble_edit_nsearch_needle=$needle
   if [[ ! $_ble_edit_nsearch_needle ]]; then
     local empty=empty-search
-    local rex='.*:empty=([^:]*):'
-    [[ :$opts: =~ $rex ]] && empty=${BASH_REMATCH[1]}
+    ble/opts#extract-last-optarg "$opts" empty && empty=$ret
     case $empty in
     (history-move)
       if [[ :$opts: == *:forward:* ]]; then
@@ -26757,7 +27282,7 @@ function ble/widget/nsearch/cancel {
       if [[ $_ble_edit_nsearch_loadctx ]]; then
         ble-edit/content/reset-and-check-dirty "$line"
       else
-        ble-edit/history/goto "$_ble_edit_nsearch_index0"
+        ble-edit/history/goto "$_ble_edit_nsearch_index0" point=none
       fi
       _ble_edit_ind=${record[2]}
       _ble_edit_mark=${record[3]}
@@ -26880,6 +27405,8 @@ function ble-decode/keymap:safe/bind-history {
   ble-decode/keymap:safe/.bind 'M->'       'history-end'
   ble-decode/keymap:safe/.bind 'C-prior'   'history-beginning'
   ble-decode/keymap:safe/.bind 'C-next'    'history-end'
+  ble-decode/keymap:safe/.bind 'C-up'      'history-prev'
+  ble-decode/keymap:safe/.bind 'C-down'    'history-next'
   ble-decode/keymap:safe/.bind 'C-p'       'backward-line history'
   ble-decode/keymap:safe/.bind 'up'        'backward-line history'
   ble-decode/keymap:safe/.bind 'C-n'       'forward-line history'
@@ -26909,7 +27436,7 @@ function ble-decode/keymap:safe/bind-complete {
   ble-decode/keymap:safe/.bind 'C-TAB'     'menu-complete'
   ble-decode/keymap:safe/.bind 'S-C-i'     'menu-complete backward'
   ble-decode/keymap:safe/.bind 'S-TAB'     'menu-complete backward'
-  ble-decode/keymap:safe/.bind 'auto_complete_enter' 'auto-complete-enter'
+  ble-decode/keymap:safe/.bind 'ac_enter'  'auto-complete-enter'
   ble-decode/keymap:safe/.bind 'M-/'       'complete context=filename'
   ble-decode/keymap:safe/.bind 'M-~'       'complete context=username'
   ble-decode/keymap:safe/.bind 'M-$'       'complete context=variable'
@@ -27158,8 +27685,12 @@ function ble/builtin/read/.set-up-textarea {
   ble/decode/keymap/push read || return 1
   [[ $_ble_edit_read_context == external ]] &&
     _ble_canvas_panel_height[0]=0
-  _ble_textarea_panel=1
-  _ble_canvas_panel_focus=1
+  if ble/edit/is-command-layout; then
+    _ble_textarea_panel=0
+  else
+    _ble_textarea_panel=1
+  fi
+  _ble_canvas_panel_focus=$_ble_textarea_panel
   ble/textarea#invalidate
   ble/edit/info/set-default ansi ''
   _ble_edit_PS1=$opt_prompt
@@ -27172,6 +27703,7 @@ function ble/builtin/read/.set-up-textarea {
   ble-edit/undo/clear-all
   ble/history/set-prefix _ble_edit_read_
   _ble_syntax_lang=text
+  _ble_edit_dirty_syntax_end0=1 # force ble/syntax/parse
   _ble_highlight_layer_list=(plain region overwrite_mode disabled)
   return 0
 }
@@ -27333,7 +27865,11 @@ function ble/edit/async-read-mode {
   _ble_edit_async_read_prefix=$prefix
   ble/util/set "${prefix}_accept_hook" "$hook"
   ble/util/set "${prefix}_cancel_hook" ''
-  ble/textarea#render
+  if ((_ble_textarea_panel==0)); then
+    ble/textarea#render
+  else
+    ble/textarea#invalidate
+  fi
   ble/textarea#save-state "$prefix"
   ble/util/save-vars "$prefix" _ble_canvas_panel_focus
   ble/util/set "${prefix}_history_prefix" "$_ble_history_prefix"
@@ -27350,6 +27886,7 @@ function ble/edit/async-read-mode {
   ble-edit/undo/clear-all
   ble/history/set-prefix "$prefix"
   _ble_syntax_lang=text
+  _ble_edit_dirty_syntax_end0=1 # force ble/syntax/parse
   _ble_highlight_layer_list=(plain region overwrite_mode)
   return 147
 }
@@ -27391,7 +27928,6 @@ function ble/widget/command-help/.read-man {
 function ble/widget/command-help/.locate-in-man-bash {
   local command=$1
   local ret rex
-  local rex_esc=$'(\e\\[[ -?]*[@-~]||.\b)' cr=$'\r'
   local pager; ble/util/get-pager pager
   local pager_cmd=${pager%%["$_ble_term_IFS"]*}
   [[ ${pager_cmd##*/} == less ]] || return 1
@@ -27410,10 +27946,12 @@ function ble/widget/command-help/.locate-in-man-bash {
   esac
   ble/string#escape-for-awk-regex "$cmd_awk"; local rex_awk=$ret
   rex='\b$'; [[ $awk == gawk && $cmd_awk =~ $rex ]] && rex_awk=$rex_awk'\y'
+  local LC_ALL= LC_COLLATE=C 2>/dev/null
+  local rex_esc=$'(\e\\[[ -?]*[@-~]||.\b)' cr=$'\r' # disable=#D1440
   local awk_script='{
     gsub(/'"$rex_esc"'/, "");
-    if (!par && $0 ~ /^['"$_ble_term_space"']*'"$rex_awk"'/) { print NR; exit; }
-    par = !($0 ~ /^['"$_ble_term_space"']*$/);
+    if (!par && $0 ~ /^['"$_ble_term_blank"']*'"$rex_awk"'/) { print NR; exit; }
+    par = !($0 ~ /^['"$_ble_term_blank"']*$/);
   }'
   local awk_out; ble/util/assign awk_out '"$awk" "$awk_script" 2>/dev/null <<< "$man_content"' || return 1 # 206ms (1 fork)
   local iline=${awk_out%$'\n'}; [[ $iline ]] || return 1
@@ -27421,7 +27959,9 @@ function ble/widget/command-help/.locate-in-man-bash {
   rex='\b$'; [[ $command =~ $rex ]] && rex_ext=$rex_ext'\b'
   rex='^\b'; [[ $command =~ $rex ]] && rex_ext="($rex_esc|\b)$rex_ext"
   local manpager="$pager -r +'/$rex_ext$cr$((iline-1))g'"
-  builtin eval -- "$manpager" <<< "$man_content" # 1 fork
+  builtin eval -- "$manpager" <<< "$man_content"; local ext=$? # 1 fork
+  ble/util/unlocal LC_COLLATE LC_ALL 2>/dev/null
+  return "$ext"
 }
 function ble/widget/command-help/.show-bash-script {
   local _ble_local_pipeline=$1
@@ -27454,7 +27994,7 @@ function ble/widget/command-help.core {
   if ble/is-function ble/bin/man; then
     MANOPT= ble/bin/man "${command##*/}" 2>/dev/null && return 0
   fi
-  if local content; content=$("$command" --help 2>&1) && [[ $content ]]; then
+  if local content; ble/util/assign content '"$command" --help 2>&1' && [[ $content ]]; then
     ble/util/print "$content" | ble/util/pager
     return 0
   fi
@@ -27478,7 +28018,7 @@ function ble/widget/command-help/.type/.resolve-alias {
     last_literal=$literal
     last_command=$command
     [[ $type == alias ]]
-  do :; done
+  do ((1)); done
   if [[ ! $type || $type == alias ]]; then
     literal=$last_literal
     command=$last_command
@@ -27497,7 +28037,7 @@ function ble/widget/command-help/.type {
   local ret; ble/syntax:bash/simple-word/safe-eval "$literal" nonull || return 1; command=$ret
   ble/util/type type "$command"
   if [[ $type == alias ]]; then
-    builtin eval -- "$(ble/widget/command-help/.type/.resolve-alias "$literal" "$command")"
+    builtin eval -- "$(ble/widget/command-help/.type/.resolve-alias "$literal" "$command")" # subshell
   fi
   if [[ $type == keyword && $command != "$literal" ]]; then
     if [[ $command == %* ]] && jobs -- "$command" &>/dev/null; then
@@ -27532,9 +28072,9 @@ function ble/widget/command-help {
   fi
   ble/widget/command-help.impl "$cmd"
 }
-function ble-edit/bind/stdout.on { :;}
-function ble-edit/bind/stdout.off { ble/util/buffer.flush;}
-function ble-edit/bind/stdout.finalize { :;}
+function ble-edit/bind/stdout.on { return 0; }
+function ble-edit/bind/stdout.off { ble/util/buffer.flush; }
+function ble-edit/bind/stdout.finalize { return 0; }
 if [[ $bleopt_internal_suppress_bash_output ]]; then
   _ble_edit_io_fname2=$_ble_base_run/$$.stderr
   function ble-edit/bind/stdout.on {
@@ -27567,22 +28107,28 @@ if [[ $bleopt_internal_suppress_bash_output ]]; then
   if ((_ble_bash<40000)); then
     function ble-edit/io/TRAPUSR1 {
       [[ $_ble_term_state == internal ]] || return 1
+      _ble_decode_bind__uvwflag=
+      ble/decode/readline/adjust-uvw
       local FUNCNEST=
       local IFS=$_ble_term_IFS
       local file=$_ble_edit_io_fname2.proc
       if [[ -s $file ]]; then
-        local content cmd
+        local content cmd processed_eof=1
         ble/util/readfile content "$file"
         >| "$file"
-        for cmd in $content; do
+        ble/string#split-words content "$content"
+        for cmd in "${content[@]}"; do
           case $cmd in
           (eof)
             _ble_decode_hook 4
-            builtin eval -- "$_ble_decode_bind_hook" ;;
+            builtin eval -- "$_ble_decode_bind_hook"
+            processed_eof=1 ;;
           esac
         done
+        if [[ $processed_eof ]]; then
+          return 126
+        fi
       fi
-      ble/builtin/trap/invoke USR1
     }
     blehook/declare internal_USR1
     blehook internal_USR1!=ble-edit/io/TRAPUSR1
@@ -27825,6 +28371,13 @@ function ble/widget/.EDIT_COMMAND {
   local N=${#_ble_edit_str}
   ((_ble_edit_ind<0?_ble_edit_ind=0:(_ble_edit_ind>N&&(_ble_edit_ind=N))))
   ((_ble_edit_mark<0?_ble_edit_mark=0:(_ble_edit_mark>N&&(_ble_edit_mark=N))))
+  if [[ $_ble_decode_keymap == vi_nmap ]]; then
+    if [[ $KEYMAP == vi_nmap ]]; then
+      ble/keymap:vi/adjust-command-mode
+    else
+      ble/keymap:vi/needs-eol-fix && ((_ble_edit_ind--))
+    fi
+  fi
   return "$ext"
 }
 function ble-decode/INITIALIZE_DEFMAP {
@@ -27948,9 +28501,9 @@ function ble/syntax/initialize-vars {
   _ble_syntax_vanishing_word_umax=-1
   _ble_syntax_dbeg=-1 _ble_syntax_dend=-1
 }
-function ble/highlight/layer:syntax/update { true; }
-function ble/highlight/layer:syntax/getg { true; }
-function ble/syntax:bash/is-complete { true; }
+function ble/highlight/layer:syntax/update { return 0; }
+function ble/highlight/layer:syntax/getg { return 0; }
+function ble/syntax:bash/is-complete { return 0; }
 ble/util/autoload "$_ble_base/lib/core-syntax.sh" \
   ble/syntax/parse \
   ble/syntax/highlight \
@@ -28087,16 +28640,24 @@ bleopt/declare -v complete_ambiguous 1
 bleopt/declare -v complete_contract_function_names 1
 bleopt/declare -v complete_auto_complete 1
 bleopt/declare -v complete_auto_complete_opts ''
-bleopt/declare -v complete_auto_history 1
 bleopt/declare -n complete_auto_delay 1
 bleopt/declare -v complete_auto_wordbreaks "$_ble_term_IFS"
 bleopt/declare -v complete_auto_menu ''
 bleopt/declare -v complete_allow_reduction ''
 bleopt/declare -v complete_requote_threshold 0
+bleopt/declare -o complete_auto_history
+function bleopt/check:complete_auto_history {
+  if [[ $value ]]; then
+    bleopt complete_auto_complete_opts-=history-disabled
+  else
+    bleopt complete_auto_complete_opts+=history-disabled
+  fi
+  return 1
+}
 bleopt/declare -n complete_menu_style align-nowrap
 function bleopt/check:complete_menu_style {
   [[ $value == desc-raw ]] && value=desc
-  if ! ble/is-function "ble/complete/menu-style:$value/construct-page"; then
+  if ! ble/is-function ble/complete/menu-style:"$value"/construct-page; then
     ble/util/print-lines \
       "bleopt: Invalid value complete_menu_style='$value'." \
       "  A function 'ble/complete/menu-style:$value/construct-page' is not defined." >&2
@@ -28164,14 +28725,15 @@ ble/color/defface menu_filter_input fg=16,bg=229
 ble/color/defface menu_desc_default none
 ble/color/defface menu_desc_type    ref:syntax_delimiter
 ble/color/defface menu_desc_quote   ref:syntax_quoted
+ble/color/defface menu_complete_match    bold
+ble/color/defface menu_complete_selected reverse
 ble/util/autoload "$_ble_base/lib/core-debug.sh" \
-                  ble/debug/setdbg \
-                  ble/debug/print \
                   ble/debug/print-variables \
                   ble/debug/stopwatch/start \
                   ble/debug/stopwatch/stop \
                   ble/debug/profiler/start \
-                  ble/debug/profiler/stop
+                  ble/debug/profiler/stop \
+                  ble/debug/xtrace.advice
 bleopt/declare -v debug_profiler_opts line:func
 bleopt/declare -n debug_profiler_tree_threshold 5.0
 function ble/contrib/integration:bash-preexec/loader {
@@ -28215,7 +28777,13 @@ function ble/dispatch/.help {
     '  hook    ... alias of blehook' \
     '  sabbrev ... alias of ble-sabbrev' \
     '  palette ... alias of ble-color-show' \
+    '' \
+    '  # Diagnostics' \
+    '  summary ... Summarize the current shell setup' \
     ''
+}
+function ble/dispatch:summary {
+  ble/widget/display-shell-version
 }
 function ble/dispatch {
   if (($#==0)); then
@@ -28238,14 +28806,21 @@ function ble/dispatch {
   (version|--version) ble/util/print "ble.sh, version $BLE_VERSION (noarch)" ;;
   (check|--test) ble/base/sub:test "$@" ;;
   (*)
-    if ble/string#match "$cmd" '^[-a-zA-Z0-9]+$' && ble/is-function "ble-$cmd"; then
-      "ble-$cmd" "$@"
-    elif ble/is-function ble/bin/ble; then
-      ble/bin/ble "$cmd" "$@"
-    else
-      ble/util/print "ble (ble.sh): unrecognized subcommand '$cmd'." >&2
-      return 2
+    if ble/string#match "$cmd" '^[-a-zA-Z0-9]+$'; then
+      if ble/is-function ble/dispatch:"$cmd"; then
+        ble/dispatch:"$cmd" "$@"
+        return "$?"
+      elif ble/is-function "ble-$cmd"; then
+        "ble-$cmd" "$@"
+        return "$?"
+      fi
     fi
+    if ble/is-function ble/bin/ble; then
+      ble/bin/ble "$cmd" "$@"
+      return "$?"
+    fi
+    ble/util/print "ble (ble.sh): unrecognized subcommand '$cmd'." >&2
+    return 2
   esac
 }
 function ble {
@@ -28269,9 +28844,24 @@ function ble/base/load-rcfile {
       _ble_base_rcfile=$HOME/.blerc
   fi
   if [[ -s $_ble_base_rcfile ]]; then
-    source "$_ble_base_rcfile"
+    source -- "$_ble_base_rcfile"
     blehook/.compatibility-ble-0.3/check
   fi
+}
+function ble/base/attach/.needs-prompt-attach {
+  local ext=1
+  [[ $1 == *:force:* ]] && return 1
+  if [[ ${IN_NIX_SHELL-} && "${BASH_SOURCE[*]}" == */rc ]]; then
+    ext=0
+  fi
+  if [[ ${VSCODE_INJECTION-} ]]; then
+    ext=0
+  elif [[ ${kitty_bash_inject-} ]]; then
+    ext=0
+  elif [[ ${ghostty_bash_inject-} || ${__ghostty_bash_flags-} ]]; then
+    ext=0
+  fi
+  return "$ext"
 }
 function ble-attach {
   if (($# >= 2)); then
@@ -28295,21 +28885,16 @@ function ble-attach {
   ble/base/adjust-builtin-wrappers
   ble/base/adjust-bash-options
   ble/base/adjust-BASH_REMATCH
-  if [[ ${IN_NIX_SHELL-} ]]; then
-    if [[ "${BASH_SOURCE[*]}" == */rc && $1 != *:force:* ]]; then
-      ble/base/install-prompt-attach
-      _ble_attached=
-      BLE_ATTACHED=
-      ble/base/restore-BASH_REMATCH
-      ble/base/restore-bash-options
-      ble/base/restore-builtin-wrappers
-      ble/base/restore-POSIXLY_CORRECT
-      builtin eval -- "$_ble_bash_FUNCNEST_restore"
-      return 0
-    fi
-    local ret
-    ble/util/readlink "/proc/$$/exe"
-    [[ -x $ret ]] && BASH=$ret
+  if ble/base/attach/.needs-prompt-attach; then
+    ble/base/install-prompt-attach
+    _ble_attached=
+    BLE_ATTACHED=
+    ble/base/restore-BASH_REMATCH
+    ble/base/restore-bash-options
+    ble/base/restore-builtin-wrappers
+    ble/base/restore-POSIXLY_CORRECT
+    builtin eval -- "$_ble_bash_FUNCNEST_restore"
+    return 0
   fi
   ble/fd/save-external-standard-streams
   exec 0<&"$_ble_util_fd_tui_stdin"
@@ -28520,7 +29105,9 @@ function ble/base/sub:test {
   ble-import lib/core-test
   if (($#==0)); then
     set -- bash main util canvas decode edit syntax complete keymap.vi
-    logfile=$_ble_base_cache/test.$(date +'%Y%m%d.%H%M%S').log
+    local timestamp
+    ble/util/strftime -v timestamp '%Y%m%d.%H%M%S'
+    logfile=$_ble_base_cache/test.$timestamp.log
     >| "$logfile"
     ble/test/log#open "$logfile"
   fi
@@ -28540,7 +29127,7 @@ function ble/base/sub:test {
   for section; do
     local file=$_ble_base/lib/test-$section.sh
     if [[ -f $file ]]; then
-      source "$file"
+      source -- "$file"
     else
       ble/test/log "ERROR: Test '$section' is not defined."
       error=1

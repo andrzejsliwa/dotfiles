@@ -10,40 +10,35 @@
 function ble/init:bind/append {
   local xarg="\"$1\":_ble_decode_hook $2; builtin eval -- \"\$_ble_decode_bind_hook\""
   local rarg=$1 condition=$3${3:+' && '}
-  ble/util/print "${condition}builtin bind -x '${xarg//$q/$Q}'" >> "$fbind1"
-  ble/util/print "${condition}builtin bind -r '${rarg//$q/$Q}'" >> "$fbind2"
+  ble/util/print "${condition}builtin bind -x '${xarg//$q/$Q}'" >&3
+  ble/util/print "${condition}builtin bind -r '${rarg//$q/$Q}'" >&4
 }
 function ble/init:bind/append-macro {
   local kseq1=$1 kseq2=$2 condition=$3${3:+' && '}
   local sarg="\"$kseq1\":\"$kseq2\"" rarg=$kseq1
-  ble/util/print "${condition}builtin bind    '${sarg//$q/$Q}'" >> "$fbind1"
-  ble/util/print "${condition}builtin bind -r '${rarg//$q/$Q}'" >> "$fbind2"
+  ble/util/print "${condition}builtin bind    '${sarg//$q/$Q}'" >&3
+  ble/util/print "${condition}builtin bind -r '${rarg//$q/$Q}'" >&4
 }
 function ble/init:bind/bind-s {
   local sarg=$1
-  ble/util/print "builtin bind '${sarg//$q/$Q}'" >> "$fbind1"
+  ble/util/print "builtin bind '${sarg//$q/$Q}'" >&3
 }
-function ble/init:bind/generate-binder {
-  local fbind1=$_ble_base_cache/decode.bind.$_ble_bash.$bleopt_input_encoding.bind
-  local fbind2=$_ble_base_cache/decode.bind.$_ble_bash.$bleopt_input_encoding.unbind
-  ble/edit/info/show text "ble.sh: updating binders..."
-  >| "$fbind1"
-  >| "$fbind2"
+function ble/init:bind/.generate {
   local q=\' Q="'\\''"
   local altdqs00='\xC0\x80'
   local altdqs24='\xC0\x98'
   local altdqs27='\xC0\x9B'
+  local isolated27='\xDE\xBC'
+  local prefixO='\xDE\xBA'
   local esc00=$((40300<=_ble_bash&&_ble_bash<50000))
   local bind18XX=0
   if ((40400<=_ble_bash&&_ble_bash<50000)); then
-    ble/util/print "[[ -o emacs ]] && builtin bind 'set keyseq-timeout 1'" >> "$fbind1"
-    fbind2=$fbind1 ble/init:bind/append '\C-x\C-x' 24 '[[ -o emacs ]]'
+    ble/util/print "[[ -o emacs ]] && builtin bind 'set keyseq-timeout 1'" >&3
+    ble/init:bind/append '\C-x\C-x' 24 '[[ -o emacs ]]' 4>&3
   elif ((_ble_bash<40300)); then
     bind18XX=1
   fi
-  local esc1B=3
-  local esc1B5B=1 bindAllSeq=0
-  local esc1B1B=$((40100<=_ble_bash&&_ble_bash<40300))
+  local bind1B4FXX=$((40000<=_ble_bash&&_ble_bash<50000))
   local i
   for i in {128..255} {0..127}; do
     local ret; ble/decode/c2dqs "$i"
@@ -60,13 +55,7 @@ function ble/init:bind/generate-binder {
         ble/init:bind/append "$ret" "$i"
       fi
     elif ((i==27)); then
-      if ((esc1B==0)); then
-        ble/init:bind/append "$ret" "$i"
-      elif ((esc1B==2)); then
-        ble/init:bind/append-macro '\e' "$altdqs27"
-      elif ((esc1B==3)); then
-        ble/init:bind/append-macro '\e' '\xDF\xBC' # C-[
-      fi
+      ble/init:bind/append-macro '\e' "$isolated27" # C-[
     else
       ((i==28&&_ble_bash>=50000)) && ret='\x1C'
       ble/init:bind/append "$ret" "$i"
@@ -80,34 +69,32 @@ function ble/init:bind/generate-binder {
         ble/init:bind/append-macro "\C-x$ret" "$altdqs24$ret"      '[[ -o emacs ]]'
       fi
     fi
-    if ((esc1B==3)); then
-      if ((i==0)); then
-        ble/init:bind/append-macro '\e'"$ret" "$altdqs27$altdqs00"
-      elif ((bind18XX&&i==24)); then
-        ble/init:bind/append-macro '\e'"$ret" "$altdqs27$altdqs24"
-      else
-        ble/init:bind/append-macro '\e'"$ret" "$altdqs27$ret"
-      fi
+    if ((i==0)); then
+      ble/init:bind/append-macro '\e'"$ret" "$altdqs27$altdqs00"
+    elif ((bind18XX&&i==24)); then
+      ble/init:bind/append-macro '\e'"$ret" "$altdqs27$altdqs24"
     else
-      if ((esc1B==1)); then
-        if ((i==91&&esc1B5B)); then
-          ble/init:bind/append-macro '\e[' "$altdqs27["
-        else
-          ble/init:bind/append "\\e$ret" "27 $i"
-        fi
-      fi
-      if ((i==27&&esc1B1B)); then
-        ble/init:bind/append-macro '\e\e' '\e[^'
-        ble/util/print "ble-bind -k 'ESC [ ^' __esc__"      >> "$fbind1"
-        ble/util/print "ble-bind -f __esc__ '.CHARS 27 27'" >> "$fbind1"
+      ble/init:bind/append-macro '\e'"$ret" "$altdqs27$ret"
+    fi
+    if ((bind1B4FXX)); then
+      if ((i==0)); then
+        ble/init:bind/append-macro '\eO'"$ret" "$altdqs27$prefixO$altdqs00"
+      elif ((bind18XX&&i==24)); then
+        ble/init:bind/append-macro '\eO'"$ret" "$altdqs27$prefixO$altdqs24"
+      else
+        ble/init:bind/append-macro '\eO'"$ret" "$altdqs27$prefixO$ret"
       fi
     fi
   done
-  if ((bindAllSeq)); then
-    ble/util/print 'source "$_ble_decode_bind_fbinder.bind"' >> "$fbind1"
-    ble/util/print 'source "$_ble_decode_bind_fbinder.unbind"' >> "$fbind2"
-  fi
   ble/function#try ble/encoding:"$bleopt_input_encoding"/generate-binder
+  local hash='d2348e25759c982a945fb64c2a8bce9940f78eae'
+  ble/util/print "_ble_decode_bind_cache_hash='$hash'" >&3
+}
+function ble/init:bind/generate-binder {
+  local fbind1=$_ble_base_cache/decode.bind.$_ble_bash.$bleopt_input_encoding.bind
+  local fbind2=$_ble_base_cache/decode.bind.$_ble_bash.$bleopt_input_encoding.unbind
+  ble/edit/info/show text "ble.sh: updating binders..."
+  ble/init:bind/.generate 3>| "$fbind1" 4>| "$fbind2"
   ble/edit/info/immediate-show text "ble.sh: updating binders... done"
 }
 ble/init:bind/generate-binder

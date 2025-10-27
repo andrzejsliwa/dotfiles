@@ -253,7 +253,7 @@ function bleopt/check:colorglass_base16_palette {
 
     local -a colors
     local -x key=$value
-    ble/util/assign-words colors 'ble/bin/awk '\''BEGIN { key = ENVIRON["key"]; } $0 !~ /^[[:space:]]*#/ && $1 == key { $1 = ""; print; }'\'' "$file"'
+    ble/util/assign-words colors 'ble/bin/awk '\''BEGIN { key = ENVIRON["key"]; } $0 !~ /^[[:blank:]]*#/ && $1 == key { $1 = ""; print; }'\'' "$file"'
     if ((${#colors[@]}==0)); then
       ble/util/print "bleopt colorglass_base16_palette: invalid palette '$value'." >&2
       return 1
@@ -523,7 +523,7 @@ function ble/fixed-point#pow {
         xx=$ret
         (((p<<=1)&_ble_fixed_unit)) && ble/array#push fac "$xx"
         ((p&0xFFFF))
-      do :; done
+      do ((1)); done
       ((x<_ble_fixed_unit)) && ble/array#reverse fac
       ble/fixed-point#mul "${fac[@]}"
       ((out=out*ret/_ble_fixed_unit))

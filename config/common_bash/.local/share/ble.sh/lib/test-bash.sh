@@ -8,7 +8,7 @@
 #
 # Source: /lib/test-bash.sh
 ble-import lib/core-test
-ble/test/start-section 'bash' 69
+ble/test/start-section 'bash' 117
 (
   a='x y'
   ble/test code:'ret=$a' ret="x y"
@@ -42,6 +42,19 @@ ble/test/start-section 'bash' 69
   ble/test code:'ret=$b' ret="/*"
   ble/test 'case $b in ("/*") true ;; (*) false ;; esac'
   ble/test 'read -r ret <<< $b' ret="/*"
+)
+(
+  L='0&&L'
+  if ((40200<=_ble_bash)); then
+    ble/test '((L,1))'
+  elif ((30200<=_ble_bash)); then
+    ble/test '! ((L,1))'
+  else
+    ble/test '( ! ((L,1)) )'
+  fi
+  i=0 M='i++,M[i>=10]'
+  ble/test '((M,1))'
+  ble/test code:'ret=$i' ret=10
 )
 (
   a=("")
@@ -88,7 +101,7 @@ ble/test/start-section 'bash' 69
     ble/test 'f1'
   fi
   set +o posix
-  function f1/sub { true; }
+  function f1/sub { return 0; }
   if ((_ble_bash<50300)); then
     ble/test 'set -o posix; f1/sub; ret=$?; set +o posix' ret=0
   else
@@ -116,6 +129,33 @@ ble/test/start-section 'bash' 69
   fi
 )
 (
+  function ble/test:bash/count-words {
+    local generator=$1
+    local expected=$2
+    shift 2
+    builtin eval -- "b=($generator)"
+    ble/test --depth=1 --display-code="$generator (# of words)" code:'ret=${#b[@]}' ret="$expected"
+  }
+  empty= nonempty=x
+  if ((40200<=_ble_bash&&_ble_bash<50200)); then
+    bugD2352=0
+  else
+    bugD2352=1
+  fi
+  a=("")
+  ble/test:bash/count-words '"${a[@]#}"'          1           ''
+  ble/test:bash/count-words '"${@#}"'             1           ''
+  ble/test:bash/count-words '"${a[@]#$empty}"'    "$bugD2352" ''
+  ble/test:bash/count-words '"${@#$empty}"'       "$bugD2352" ''
+  ble/test:bash/count-words '"${a[@]#$nonempty}"' "$bugD2352" ''
+  ble/test:bash/count-words '"${@#$nonempty}"'    "$bugD2352" ''
+  a=(x)
+  ble/test:bash/count-words '"${a[@]#x}"'         "$bugD2352" 'x'
+  ble/test:bash/count-words '"${@#x}"'            "$bugD2352" 'x'
+  ble/test:bash/count-words '"${a[@]#$empty}"'    1           'x'
+  ble/test:bash/count-words '"${@#$empty}"'       1           'x'
+  ble/test:bash/count-words '"${a[@]#$nonempty}"' "$bugD2352" 'x'
+  ble/test:bash/count-words '"${@#$nonempty}"'    "$bugD2352" 'x'
   function f1 { local -a a; local -A a; }
   if ((_ble_bash<40000)); then
     ble/test f1 exit=2
@@ -136,6 +176,58 @@ ble/test/start-section 'bash' 69
   ble/test 'case "${c[*]}" in ("axbxc") true ;; (*) false ;; esac'
   ble/test 'read -r ret <<< "${c[*]}"' ret="axbxc"
   IFS=$' \t\n'
+  builtin unset -v scalar
+  scalar=abcd
+  if ((_ble_bash<30100)); then
+    ble/test code:'ret=${scalar[@]//[bc]}' ret=''   # disable=#D1570
+    ble/test code:'ret=${scalar[*]//[bc]}' ret=''   # disable=#D1570
+  elif ((40300<=_ble_bash&&_ble_bash<40400)); then
+    ble/test code:'ret=${scalar[@]//[bc]}' ret=$'\001a\001\001\001d' # disable=#D1570
+    ble/test code:'ret=${scalar[*]//[bc]}' ret=$'\001a\001\001\001d' # disable=#D1570
+  else
+    ble/test code:'ret=${scalar[@]//[bc]}' ret='ad' # disable=#D1570
+    ble/test code:'ret=${scalar[*]//[bc]}' ret='ad' # disable=#D1570
+  fi
+  empty= nonempty=1
+  if ((40200<=_ble_bash&&_ble_bash<40300)); then
+    bugD2352=0
+  else
+    bugD2352=1
+  fi
+  a=("")
+  ble/test:bash/count-words '"${a[@]}"'             1           ''
+  ble/test:bash/count-words '"${a[@]/#}"'           "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/#/}"'          "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/#/$empty}"'    "$bugD2352" '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${a[@]/#/$nonempty}"' 1           '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${@/#}"'              "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${@/#/}"'             "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${@/#/$empty}"'       "$bugD2352" '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${@/#/$nonempty}"'    1           '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${a[0]/#}"'           1           '' # disable=#D1570
+  ble/test:bash/count-words '"${a[0]/#/}"'          1           '' # disable=#D1570
+  ble/test:bash/count-words '"${a[0]/#/$empty}"'    1           '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${a[0]/#/$nonempty}"' 1           '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${a[@]/x}"'           "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/x/}"'          "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/x/$empty}"'    "$bugD2352" '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${@/x}"'              "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${@/x/}"'             "$bugD2352" '' # disable=#D1570
+  ble/test:bash/count-words '"${@/x/$empty}"'       "$bugD2352" '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${a[0]/x}"'           1           '' # disable=#D1570
+  ble/test:bash/count-words '"${a[0]/x/}"'          1           '' # disable=#D1570
+  ble/test:bash/count-words '"${a[0]/x/$empty}"'    1           '' # disable=#D1570,#D1738
+  a=("" "")
+  ble/test:bash/count-words '"${a[@]}"'             2           '' '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/#}"'           2           '' '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/#/}"'          2           '' '' # disable=#D1570
+  ble/test:bash/count-words '"${a[@]/#/$empty}"'    2           '' '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${a[@]/#/$nonempty}"' 2           '' '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${@}"'                2           '' '' # disable=#D1570
+  ble/test:bash/count-words '"${@/#}"'              2           '' '' # disable=#D1570
+  ble/test:bash/count-words '"${@/#/}"'             2           '' '' # disable=#D1570
+  ble/test:bash/count-words '"${@/#/$empty}"'       2           '' '' # disable=#D1570,#D1738
+  ble/test:bash/count-words '"${@/#/$nonempty}"'    2           '' '' # disable=#D1570,#D1738
   c=(a b c)
   ble/test code:'ret=${c[*]}' ret="a b c"
   ble/test 'case ${c[*]} in ("a b c") true ;; (*) false ;; esac'
@@ -235,15 +327,6 @@ ble/test/start-section 'bash' 69
     ble/test code:'ret=$a2' ret='1 2 3'
   fi
   IFS=$' \t\n'
-  builtin unset -v scalar
-  scalar=abcd
-  if ((_ble_bash<30100)); then
-    ble/test code:'ret=${scalar[@]//[bc]}' ret=''   # disable=#D1570
-  elif ((40300<=_ble_bash&&_ble_bash<40400)); then
-    ble/test code:'ret=${scalar[@]//[bc]}' ret=$'\001a\001\001\001d' # disable=#D1570
-  else
-    ble/test code:'ret=${scalar[@]//[bc]}' ret='ad' # disable=#D1570
-  fi
 )
 (
   q=\' line='$'$q'\'$q'!!'$q'\'$q

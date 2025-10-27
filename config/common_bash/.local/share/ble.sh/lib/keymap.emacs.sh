@@ -41,18 +41,9 @@ function ble/widget/emacs/__before_widget__ {
     ble-edit/undo/add
   fi
 }
-function ble/widget/emacs/undo {
-  local arg; ble-edit/content/get-arg 1
-  ble-edit/undo/undo "$arg" || ble/widget/.bell 'no more older undo history'
-}
-function ble/widget/emacs/redo {
-  local arg; ble-edit/content/get-arg 1
-  ble-edit/undo/redo "$arg" || ble/widget/.bell 'no more recent undo history'
-}
-function ble/widget/emacs/revert {
-  local arg; ble-edit/content/clear-arg
-  ble-edit/undo/revert
-}
+function ble/widget/emacs/undo { ble/widget/undo "$@"; }
+function ble/widget/emacs/redo { ble/widget/redo "$@"; }
+function ble/widget/emacs/revert { ble/widget/revert "$@"; }
 function ble/keymap:emacs/.get-emacs-keymap {
   ble/prompt/unit/add-hash '$_ble_decode_keymap,${_ble_decode_keymap_stack[*]}'
   local i=${#_ble_decode_keymap_stack[@]}
@@ -207,7 +198,7 @@ function ble-decode/keymap:emacs/initialize {
   if [[ -s $fname_keymap_cache &&
           $fname_keymap_cache -nt $_ble_base/lib/keymap.emacs.sh &&
           $fname_keymap_cache -nt $_ble_base/lib/init-cmap.sh ]]; then
-    source "$fname_keymap_cache" && return 0
+    source -- "$fname_keymap_cache" && return 0
   fi
   ble/edit/info/immediate-show text "ble.sh: updating cache/keymap.emacs..."
   {
