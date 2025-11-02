@@ -26,7 +26,7 @@
 # Source: /lib/core-debug-def.sh
 # Source: /contrib/integration/bash-preexec-def.sh
 {
-  _ble_init_version=0.4.0-nightly+2f564e6
+  _ble_init_version=0.4.0-devel4+2f564e6
   _ble_init_exit=
   _ble_init_command=
   _ble_init_skip=
@@ -1661,12 +1661,12 @@ function ble-reload {
   builtin eval -- "$_ble_bash_POSIXLY_CORRECT_local_leave"
   source -- "$_ble_base/ble.sh" "${_ble_local_options[@]}"
 }
-_ble_base_repository=release:nightly-20251019+2f564e6
+_ble_base_repository='/home/andrzejsliwa/ble.sh'
 _ble_base_branch='master'
 _ble_base_repository_url=https://github.com/akinomyoga/ble.sh
-_ble_base_build_git_version='git version 2.51.0'
+_ble_base_build_git_version='git version 2.51.2'
 _ble_base_build_make_version='GNU Make 4.3'
-_ble_base_build_gawk_version='GNU Awk 5.2.1, API 3.2, PMA Avon 8-g1, (GNU MPFR 4.2.1, GNU MP 6.3.0)'
+_ble_base_build_gawk_version='GNU Awk 5.1.0, API: 3.0 (GNU MPFR 4.1.0, GNU MP 6.2.1)'
 function ble-update/.check-install-directory-ownership {
   if [[ ! -O $_ble_base ]]; then
     ble/util/print 'ble-update: install directory is owned by another user:' >&2

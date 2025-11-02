@@ -1,5 +1,43 @@
-[input2]
-0=/mnt/c/Users/FSOS/
-
 [input-def]
 0=*
+
+[input2]
+0=/mnt/c/Users/FSOS/
+1=/home/andrzejsliwa/dotfiles/config/common_bash/.local/share/
+
+[cmdline]
+0=OB
+1=touch .gitignore
+2=
+
+[Dir Hist New Right Panel]
+0=/home/andrzejsliwa/.local
+1=/home/andrzejsliwa/.local/share/ble.sh
+2=/home/andrzejsliwa/.local/share
+3=/home
+4=/home/andrzejsliwa
+5=/home/andrzejsliwa/dotfiles/config/common_bash/.config
+6=/home/andrzejsliwa/dotfiles/config/common_bash/.bashrc.d
+7=/home/andrzejsliwa/dotfiles
+8=/home/andrzejsliwa/dotfiles/config
+9=/home/andrzejsliwa/dotfiles/config/common_bash
+10=/home/andrzejsliwa/dotfiles/config/common_bash/.local
+11=/home/andrzejsliwa/dotfiles/config/common_bash/.local/share
+12=/home/andrzejsliwa/dotfiles/config/common_bash/.local/share/blesh/run/andrzejsliwa@Legion5Pro
+13=/home/andrzejsliwa/dotfiles/config/common_bash/.local/share/blesh
+14=/home/andrzejsliwa/dotfiles/config/common_bash/.local/share/blesh/run
+
+[Dir Hist New Left Panel]
+0=/home/andrzejsliwa/dotfiles/bin
+1=/home/andrzejsliwa/dotfiles-old
+2=/home/andrzejsliwa/dotfiles/config/common_bash/.bashrc.d
+3=/home/andrzejsliwa/dotfiles/config/common_bash
+4=/home/andrzejsliwa/dotfiles/config
+5=/home/andrzejsliwa/.bashrc.d
+6=/home
+7=/home/andrzejsliwa
+8=/home/andrzejsliwa/.local
+9=/home/andrzejsliwa/.local/share/ble.sh
+10=/home/andrzejsliwa/.local/share/blesh
+11=/home/andrzejsliwa/.local/share
+12=/home/andrzejsliwa/dotfiles

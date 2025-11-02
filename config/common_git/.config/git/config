@@ -41,3 +41,6 @@
 
 [credential]
 	helper = /mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe
+[user]
+	email = andrzej.sliwa@gmail.com
+	name = Andrzej Sliwa
