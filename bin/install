@@ -24,15 +24,26 @@ fi
 
 source $HOME/.profile
 
-echo "Apt-Get:"
-for file in $(dirname "$0")/../config/*/.apt.d/*; do 
-  cat $file
-  cat $file | xargs sudo apt-get install -qq -y
-done 
+if [ ! -f /usr/bin/add-apt-repository ]; then
+  sudo apt install software-properties-common -y
+fi
 
-echo "Brew:"
-for file in $(dirname "$0")/../config/*/.brewfile.d/*; do 
+echo "Apt-Repositories:"
+for file in $(dirname "$0")/../config/*/.apt.repos/*; do
   cat $file
-  cat $file | xargs brew install -q 
+  cat $file | xargs sudo add-apt-repository -y
 done
 
+sudo apt update -y
+
+echo "Apt-Get:"
+for file in $(dirname "$0")/../config/*/.apt.d/*; do
+  cat $file
+  cat $file | xargs sudo apt-get install -qq -y
+done
+
+echo "Brew:"
+for file in $(dirname "$0")/../config/*/.brewfile.d/*; do
+  cat $file
+  cat $file | xargs brew install -q
+done
