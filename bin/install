@@ -47,3 +47,7 @@ for file in $(dirname "$0")/../config/*/.brewfile.d/*; do
   cat $file
   cat $file | xargs brew install -q
 done
+
+if [ ! -f ~/bin/opera ]; then
+  ln -s /mnt/c/Users/andrzej.sliwa/AppData/Local/Programs/Opera\ GX/opera.exe ~/bin/opera
+fi

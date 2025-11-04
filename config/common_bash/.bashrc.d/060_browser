@@ -1,0 +1,2 @@
+export BROWSER=~/bin/opera
+alias xdg-open=~/bin/opera
